@@ -1,0 +1,2 @@
+# Trained model files are gitignored.
+# Run: python ml/train.py --data data/raw/student-mat.csv --output ml/models/

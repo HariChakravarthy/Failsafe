@@ -1,0 +1,9 @@
+student_code,name,age,sex,absences,studytime,failures,Walc,Dalc,famsup,health,goout,romantic,internet,department,semester
+S1001,Rahul Sharma,18,M,14,1,2,4,2,no,3,5,yes,no,Computer Science,1
+S1002,Priya Patel,19,F,2,4,0,1,1,yes,5,2,no,yes,Computer Science,1
+S1003,Amit Kumar,18,M,8,2,1,3,2,no,4,4,no,yes,Information Tech,1
+S1004,Neha Singh,20,F,0,4,0,1,1,yes,5,3,yes,yes,Mathematics,3
+S1005,Vikram Verma,19,M,22,1,3,5,4,no,2,5,yes,no,Physics,2
+S1006,Anjali Gupta,18,F,4,3,0,1,1,yes,4,2,no,yes,Computer Science,1
+S1007,Rohan Desai,21,M,12,2,1,4,3,yes,3,4,yes,yes,Mechanical,5
+S1008,Sneha Reddy,19,F,1,3,0,2,1,no,5,3,no,yes,Civil,3
