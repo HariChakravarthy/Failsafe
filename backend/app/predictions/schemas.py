@@ -4,6 +4,23 @@ import uuid
 from datetime import datetime
 
 
+class SimulateRequest(BaseModel):
+    absences: Optional[int] = None
+    studytime: Optional[int] = None
+    failures: Optional[int] = None
+    Walc: Optional[int] = None
+    goout: Optional[int] = None
+    health: Optional[int] = None
+
+
+class SimulateResponse(BaseModel):
+    risk_score: float
+    risk_level: str
+    shap_values: Dict[str, float]
+    shap_summary: Optional[str]
+
+
+
 class PredictionOut(BaseModel):
     id: uuid.UUID
     student_id: uuid.UUID
@@ -12,6 +29,7 @@ class PredictionOut(BaseModel):
     risk_level: str
     shap_values: Dict[str, float]
     shap_summary: Optional[str]
+    raw_features: Optional[Dict[str, Any]] = None
     predicted_at: datetime
 
     class Config:

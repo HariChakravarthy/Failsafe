@@ -5,6 +5,7 @@ import { interventionsApi } from "../api/interventionsApi";
 import { fmtDate } from "../utils/formatters";
 import toast from "react-hot-toast";
 import { useNavigate } from "react-router-dom";
+import OutcomeModal from "../components/interventions/OutcomeModal";
 
 const COLUMNS = [
   { key: "PENDING", label: "Pending", color: "var(--text-secondary)" },
@@ -14,11 +15,19 @@ const COLUMNS = [
 
 const PRIORITY_DOT = { URGENT: "var(--risk-high)", HIGH: "var(--risk-medium)", MEDIUM: "var(--accent)", LOW: "var(--text-muted)" };
 
+const OUTCOME_LABELS = {
+  IMPROVED: "Improved ✅",
+  NO_CHANGE: "No Change ➖",
+  DECLINED: "Declined ⬇️",
+};
+
 export default function InterventionTracker() {
   const [allItems, setAllItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [priorityFilter, setPriorityFilter] = useState("ALL");
+  const [completingItem, setCompletingItem] = useState(null);
   const navigate = useNavigate();
+
 
   const load = async () => {
     setLoading(true);
@@ -106,6 +115,13 @@ export default function InterventionTracker() {
                       style={{ borderLeft: `3px solid ${PRIORITY_DOT[iv.priority] || "var(--border)"}` }}
                     >
                       <div className="kanban-card-title">{iv.title}</div>
+                      {iv.status === "COMPLETED" && iv.outcome && (
+                        <div style={{ marginBottom: 8 }}>
+                          <span className={`outcome-badge ${iv.outcome}`}>
+                            {OUTCOME_LABELS[iv.outcome] || iv.outcome}
+                          </span>
+                        </div>
+                      )}
                       <div className="kanban-card-student" style={{ cursor: "pointer" }}
                         onClick={() => navigate(`/students/${iv.student_id}`)}>
                         👤 View student →
@@ -126,7 +142,7 @@ export default function InterventionTracker() {
                           )}
                           {col.key !== "COMPLETED" && (
                             <button className="btn btn-primary btn-sm" style={{ padding: "3px 8px", fontSize: "0.72rem" }}
-                              onClick={() => updateStatus(iv.id, "COMPLETED")}>
+                              onClick={() => setCompletingItem(iv)}>
                               ✓
                             </button>
                           )}
@@ -140,6 +156,23 @@ export default function InterventionTracker() {
           </div>
         )}
       </div>
+
+      <OutcomeModal
+        isOpen={!!completingItem}
+        onClose={() => setCompletingItem(null)}
+        onSubmit={async ({ outcome, outcomeNotes }) => {
+          const id = completingItem.id;
+          setCompletingItem(null);
+          try {
+            await interventionsApi.updateStatus(id, "COMPLETED", undefined, outcome, outcomeNotes);
+            toast.success("Marked as Completed");
+            load();
+          } catch {
+            toast.error("Failed to complete intervention");
+          }
+        }}
+        title={completingItem?.title || ""}
+      />
     </>
   );
 }
