@@ -6,6 +6,7 @@ import SHAPChart from "../components/predictions/SHAPChart";
 import StatusTracker from "../components/interventions/StatusTracker";
 import InterventionCard from "../components/interventions/InterventionCard";
 import LoadingSpinner from "../components/common/LoadingSpinner";
+import WhatIfSimulator from "../components/predictions/WhatIfSimulator";
 import { studentsApi } from "../api/studentsApi";
 import { predictionsApi } from "../api/predictionsApi";
 import { interventionsApi } from "../api/interventionsApi";
@@ -23,6 +24,30 @@ export default function StudentProfile() {
   const [history, setHistory] = useState([]);
   const [interventions, setInterventions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [downloading, setDownloading] = useState(false);
+
+  const handleDownloadReport = async () => {
+    setDownloading(true);
+    const toastId = toast.loading("Generating PDF Report...");
+    try {
+      const data = await studentsApi.downloadReport(student.id);
+      const url = window.URL.createObjectURL(new Blob([data]));
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", `${student.student_code}_report.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success("Report downloaded successfully!", { id: toastId });
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to generate PDF report", { id: toastId });
+    } finally {
+      setDownloading(false);
+    }
+  };
+
 
   const load = async () => {
     setLoading(true);
@@ -78,6 +103,12 @@ export default function StudentProfile() {
               <span style={{ color: "var(--text-secondary)", fontSize: "0.85rem" }}>📅 Added {fmtDate(student.created_at)}</span>
             </div>
           </div>
+
+          {prediction && (
+            <button className="btn btn-primary" onClick={handleDownloadReport} disabled={downloading}>
+              📄 Download Report
+            </button>
+          )}
         </div>
 
         <div className="profile-grid">
@@ -131,6 +162,11 @@ export default function StudentProfile() {
                 </div>
                 <SHAPChart shapValues={prediction.shap_values} />
               </div>
+            )}
+
+            {/* What-If Simulator */}
+            {prediction && (
+              <WhatIfSimulator studentId={student.id} originalPrediction={prediction} />
             )}
 
             {/* Risk history */}

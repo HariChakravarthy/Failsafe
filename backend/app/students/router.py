@@ -49,6 +49,39 @@ def get_student(
     return student
 
 
+@router.get("/{student_id}/report")
+def download_student_report(
+    student_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    from fastapi import Response
+    from app.models import Prediction, Intervention
+    from app.students.report import generate_student_report
+
+    student = db.query(Student).filter(Student.id == student_id).first()
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    prediction = db.query(Prediction).filter(Prediction.student_id == student_id).order_by(Prediction.predicted_at.desc()).first()
+    if not prediction:
+        raise HTTPException(status_code=404, detail="No prediction snapshot available for this student")
+
+    interventions = db.query(Intervention).filter(Intervention.student_id == student_id).order_by(Intervention.created_at.desc()).all()
+
+    pdf_bytes = generate_student_report(student, prediction, interventions)
+
+    filename = f"{student.student_code}_report.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f"attachment; filename={filename}",
+            "Access-Control-Expose-Headers": "Content-Disposition"
+        }
+    )
+
+
 @router.post("", response_model=StudentOut, status_code=201)
 def create_student(
     payload: StudentCreate,

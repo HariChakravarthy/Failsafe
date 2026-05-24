@@ -63,8 +63,21 @@ def update_intervention_status(
         raise HTTPException(status_code=404, detail="Intervention not found")
 
     iv.status = payload.status.upper()
-    if payload.notes:
+    if payload.notes is not None:
         iv.notes = payload.notes
+    
+    if iv.status == "COMPLETED":
+        from datetime import datetime, timezone
+        iv.completed_at = datetime.now(timezone.utc)
+        if payload.outcome:
+            iv.outcome = payload.outcome.upper()
+        if payload.outcome_notes:
+            iv.outcome_notes = payload.outcome_notes
+    else:
+        iv.completed_at = None
+        iv.outcome = None
+        iv.outcome_notes = None
+
     db.commit()
     db.refresh(iv)
     return iv

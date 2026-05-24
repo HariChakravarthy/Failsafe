@@ -9,4 +9,9 @@ export const predictionsApi = {
     const { data } = await client.get(`/predictions/${studentId}/history`);
     return data;
   },
+  simulate: async (studentId, overrides) => {
+    const { data } = await client.post(`/predictions/${studentId}/simulate`, overrides);
+    return data;
+  },
 };
+
