@@ -7,12 +7,12 @@ client = TestClient(app)
 def get_token():
     client.post("/auth/register", json={
         "name": "Predict Tester",
-        "email": "predict@failsafe.test",
+        "email": "predict@failsafe.com",
         "password": "testpass123",
         "role": "faculty",
     })
     r = client.post("/auth/login", json={
-        "email": "predict@failsafe.test",
+        "email": "predict@failsafe.com",
         "password": "testpass123",
     })
     if r.status_code != 200:
