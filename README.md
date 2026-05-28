@@ -496,49 +496,6 @@ cd backend
 pytest tests/ -v
 ```
 
----
-
-## 🔄 Reset Demo Data
-To clear all student data and start fresh (keeps user accounts):
-```bash
-python backend/reset_data.py
-```
-
----
-
-## Roadmap & Milestones
-
-### Phase 1 — Foundation ✅
-- Repository setup, Docker Compose
-- PostgreSQL schema + SQLAlchemy ORM
-- JWT auth (register / login / refresh)
-
-### Phase 2 — ML Core ✅
-- Feature engineering pipeline
-- XGBoost + SMOTE training with GridSearchCV
-- SHAP explainer integration
-- Model evaluation + serialisation
-
-### Phase 3 — Intervention Engine ✅
-- Rule-based intervention catalogue (9 rules)
-- Plain-English SHAP summary generator
-- Intervention CRUD API endpoints
-
-### Phase 4 — Frontend ✅
-- Auth flow (Login, JWT context)
-- CSV upload with column validator
-- Student List with risk badges
-- Student Profile: SHAP chart + intervention plan
-- Dashboard: trend charts + summary stats
-- Kanban Intervention Tracker
-
-### Phase 5 — Testing & Deployment ✅
-- pytest backend test suite
-- GitHub Actions CI pipeline
-- Docker Compose production setup
-
----
-
 ## 📄 License
 
 This project is developed for academic and educational use.
