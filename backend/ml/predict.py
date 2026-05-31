@@ -124,3 +124,47 @@ def _mock_shap(row: Dict[str, Any]) -> Dict[str, float]:
             "famsup", "health", "goout", "romantic", "internet",
         }},
     }
+
+
+def run_simulation(row: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Run prediction pipeline for a single row without DB updates/interventions.
+    """
+    _load_model()
+
+    feature_vector = get_feature_vector(row)
+    X = np.array([feature_vector])
+
+    if _model is not None:
+        if _scaler is not None:
+            X = _scaler.transform(X)
+        prob = float(_model.predict_proba(X)[0][1])
+    else:
+        # Heuristic mock scoring when model not trained yet
+        absences = float(row.get("absences", 0))
+        failures = float(row.get("failures", 0))
+        studytime = float(row.get("studytime", 2))
+        prob = min(0.95, max(0.05, (absences / 40) * 0.5 + (failures / 3) * 0.35 + (1 - studytime / 4) * 0.15))
+
+    risk_level = score_to_risk_level(prob)
+
+    # SHAP values
+    if _model is not None:
+        try:
+            from ml.explain import compute_shap_values
+            shap_dict = compute_shap_values(_model, feature_vector)
+        except Exception:
+            shap_dict = _mock_shap(row)
+    else:
+        shap_dict = _mock_shap(row)
+
+    from ml.explain import generate_shap_summary
+    shap_summary = generate_shap_summary(shap_dict, risk_level)
+
+    return {
+        "risk_score": round(prob, 4),
+        "risk_level": risk_level,
+        "shap_values": shap_dict,
+        "shap_summary": shap_summary,
+    }
+

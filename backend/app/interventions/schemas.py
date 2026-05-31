@@ -18,6 +18,8 @@ class InterventionCreate(BaseModel):
 class InterventionStatusUpdate(BaseModel):
     status: str  # PENDING | IN_PROGRESS | COMPLETED | DISMISSED
     notes: Optional[str] = None
+    outcome: Optional[str] = None
+    outcome_notes: Optional[str] = None
 
 
 class InterventionOut(BaseModel):
@@ -32,6 +34,9 @@ class InterventionOut(BaseModel):
     due_date: Optional[date]
     status: str
     notes: Optional[str]
+    outcome: Optional[str] = None
+    outcome_notes: Optional[str] = None
+    completed_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
 
@@ -42,3 +47,4 @@ class InterventionOut(BaseModel):
 class InterventionListOut(BaseModel):
     items: List[InterventionOut]
     total: int
+

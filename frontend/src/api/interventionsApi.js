@@ -9,8 +9,13 @@ export const interventionsApi = {
     const { data } = await client.get(`/interventions/${studentId}`);
     return data;
   },
-  updateStatus: async (id, status, notes) => {
-    const { data } = await client.patch(`/interventions/${id}/status`, { status, notes });
+  updateStatus: async (id, status, notes, outcome, outcomeNotes) => {
+    const { data } = await client.patch(`/interventions/${id}/status`, {
+      status,
+      notes,
+      outcome,
+      outcome_notes: outcomeNotes,
+    });
     return data;
   },
   create: async (payload) => {

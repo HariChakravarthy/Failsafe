@@ -21,4 +21,11 @@ export const studentsApi = {
     const { data } = await client.patch(`/students/${id}`, payload);
     return data;
   },
+  downloadReport: async (id) => {
+    const response = await client.get(`/students/${id}/report`, {
+      responseType: 'blob',
+    });
+    return response.data;
+  },
 };
+

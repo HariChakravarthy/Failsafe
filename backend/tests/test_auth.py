@@ -13,7 +13,7 @@ def test_register_and_login():
     # Register
     r = client.post("/auth/register", json={
         "name": "Test Faculty",
-        "email": "testfaculty@failsafe.test",
+        "email": "testfaculty@failsafe.com",
         "password": "testpass123",
         "role": "faculty",
         "department": "Computer Science",
@@ -22,7 +22,7 @@ def test_register_and_login():
 
     # Login
     r = client.post("/auth/login", json={
-        "email": "testfaculty@failsafe.test",
+        "email": "testfaculty@failsafe.com",
         "password": "testpass123",
     })
     assert r.status_code == 200
@@ -33,7 +33,7 @@ def test_register_and_login():
 
 def test_login_invalid_credentials():
     r = client.post("/auth/login", json={
-        "email": "nobody@failsafe.test",
+        "email": "nobody@failsafe.com",
         "password": "wrongpassword",
     })
     assert r.status_code == 401
@@ -46,11 +46,11 @@ def test_me_with_token():
     token = test_register_and_login()
     r = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
     assert r.status_code == 200
-    assert r.json()["email"] == "testfaculty@failsafe.test"
+    assert r.json()["email"] == "testfaculty@failsafe.com"
 
 def test_refresh_token():
     r = client.post("/auth/login", json={
-        "email": "testfaculty@failsafe.test",
+        "email": "testfaculty@failsafe.com",
         "password": "testpass123",
     })
     if r.status_code != 200:

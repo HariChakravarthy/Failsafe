@@ -87,6 +87,9 @@ class Intervention(Base):
     due_date = Column(Date)
     status = Column(String(20), default="PENDING")  # PENDING | IN_PROGRESS | COMPLETED | DISMISSED
     notes = Column(Text)
+    outcome = Column(String(20))  # IMPROVED | NO_CHANGE | DECLINED
+    outcome_notes = Column(Text)
+    completed_at = Column(DateTime(timezone=True))
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 
