@@ -501,17 +501,6 @@ cd backend
 pytest tests/ -v
 ```
 
----
-
-## 🔄 Reset Demo Data
-To clear all student data and start fresh (keeps user accounts):
-```bash
-cd backend
-python reset_data.py
-```
-
----
-
 ## 📄 License
 
 This project is developed for academic and educational use.
