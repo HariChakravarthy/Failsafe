@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import User, Student, FeatureSnapshot, Prediction
-from app.auth.utils import get_current_user
+from app.auth.utils import get_current_user, require_hod
 from app.students.schemas import StudentCreate, StudentUpdate, StudentOut, StudentListOut, UploadSummary
 from ml.predict import run_prediction_pipeline
 
@@ -22,6 +22,8 @@ def list_students(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    from sqlalchemy import func
+
     query = db.query(Student)
     if search:
         query = query.filter(
@@ -29,9 +31,35 @@ def list_students(
         )
     total = query.count()
     items = query.offset((page - 1) * size).limit(size).all()
+
+    # Single subquery to fetch latest prediction per student — avoids N+1
+    student_ids = [s.id for s in items]
+    if student_ids:
+        latest_pred_subq = (
+            db.query(
+                Prediction.student_id,
+                func.max(Prediction.predicted_at).label("max_at"),
+            )
+            .filter(Prediction.student_id.in_(student_ids))
+            .group_by(Prediction.student_id)
+            .subquery()
+        )
+        latest_preds = (
+            db.query(Prediction)
+            .join(
+                latest_pred_subq,
+                (Prediction.student_id == latest_pred_subq.c.student_id)
+                & (Prediction.predicted_at == latest_pred_subq.c.max_at),
+            )
+            .all()
+        )
+        risk_map = {str(p.student_id): p.risk_level for p in latest_preds}
+    else:
+        risk_map = {}
+
     for student in items:
-        pred = db.query(Prediction).filter(Prediction.student_id == student.id).order_by(Prediction.predicted_at.desc()).first()
-        student.latest_risk = pred.risk_level if pred else None
+        student.latest_risk = risk_map.get(str(student.id))
+
     return StudentListOut(items=items, total=total, page=page, size=size)
 
 
@@ -118,15 +146,13 @@ def update_student(
 def delete_student(
     student_id: uuid.UUID,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_hod),   # HOD / Admin only
 ):
     from app.models import FeatureSnapshot, Prediction, Intervention
     student = db.query(Student).filter(Student.id == student_id).first()
     if not student:
         raise HTTPException(status_code=404, detail="Student not found")
     # Cascade delete manually
-    snap_ids = [s.id for s in db.query(FeatureSnapshot).filter(FeatureSnapshot.student_id == student_id).all()]
-    pred_ids = [p.id for p in db.query(Prediction).filter(Prediction.student_id == student_id).all()]
     db.query(Intervention).filter(Intervention.student_id == student_id).delete()
     db.query(Prediction).filter(Prediction.student_id == student_id).delete()
     db.query(FeatureSnapshot).filter(FeatureSnapshot.student_id == student_id).delete()
@@ -138,20 +164,39 @@ def delete_student(
 async def upload_csv(
     file: UploadFile = File(...),
     week_number: int = Query(1, ge=1),
+    phase: int = Query(0, ge=0, le=2, description="Prediction phase: 0=before G1, 1=after G1, 2=after G1+G2"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Upload a CSV of student features; triggers batch prediction for each student."""
+    """Upload a CSV of student features; triggers batch prediction for each student.
+
+    Phase controls which model is used:
+      0 = Before Term 1 exams  — behavioural features only (30 features)
+      1 = After  Term 1 exams  — adds G1 first period grade  (31 features)
+      2 = After  Term 2 exams  — adds G1 + G2 period grades  (32 features)
+    """
     if not file.filename.endswith(".csv"):
         raise HTTPException(status_code=400, detail="Only CSV files are accepted")
 
     content = await file.read()
     try:
-        df = pd.read_csv(io.BytesIO(content))
+        # Auto-detect delimiter: UCI files use ';', most exports use ','
+        sample = content[:2048].decode("utf-8", errors="ignore")
+        import csv as _csv
+        try:
+            dialect = _csv.Sniffer().sniff(sample, delimiters=";,")
+            sep = dialect.delimiter
+        except Exception:
+            sep = ","  # fallback
+        df = pd.read_csv(io.BytesIO(content), sep=sep)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Could not parse CSV: {e}")
 
-    required_cols = {"student_code", "absences", "studytime", "failures"}
+    # student_code is optional — auto-generate from row index if absent
+    if "student_code" not in df.columns:
+        df["student_code"] = [f"S{str(i+1).zfill(4)}" for i in range(len(df))]
+
+    required_cols = {"absences", "studytime", "failures"}
     missing = required_cols - set(df.columns)
     if missing:
         raise HTTPException(status_code=400, detail=f"Missing required columns: {missing}")
@@ -184,7 +229,7 @@ async def upload_csv(
             db.add(snapshot)
             db.flush()
 
-            prediction = run_prediction_pipeline(row.to_dict(), student.id, snapshot.id, db)
+            prediction = run_prediction_pipeline(row.to_dict(), student.id, snapshot.id, db, phase=phase)
             if prediction:
                 student.latest_risk = prediction.risk_level
                 if prediction.risk_level == "HIGH":
