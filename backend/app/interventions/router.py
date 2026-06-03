@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import User, Intervention
-from app.auth.utils import get_current_user
+from app.auth.utils import get_current_user, require_hod
 from app.interventions.schemas import (
     InterventionCreate, InterventionStatusUpdate, InterventionOut, InterventionListOut
 )
@@ -87,8 +87,10 @@ def update_intervention_status(
 def create_intervention(
     payload: InterventionCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_hod),   # HOD / Admin only
 ):
+    """Manually create an intervention. Auto-generated ones come from the prediction pipeline.
+    Only HOD or Admin can manually create intervention records."""
     iv = Intervention(**payload.model_dump())
     db.add(iv)
     db.commit()

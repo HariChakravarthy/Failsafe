@@ -19,9 +19,13 @@ env/
 .env
 !.env.example
 
-# ML models (large binaries)
+# ML model artefacts (regenerate via: python ml/train.py --data ../data/student-mat.csv --output ml/models/)
 backend/ml/models/*.pkl
 backend/ml/models/*.json
+backend/ml/models/threshold.json
+backend/ml/models/metrics.json
+backend/ml/models/plots/
+backend/ml/models/plots_phase*/
 
 # Data (raw/processed, potentially PII)
 data/raw/

@@ -31,7 +31,6 @@ FAILSAFE is a web-based academic early-warning system that uses XGBoost + SHAP t
 15. [Dataset](#dataset)
 16. [Running Tests](#running-tests)
 17. [Reset Demo Data](#reset-demo-data)
-18. [Roadmap & Milestones](#roadmap--milestones)
 
 ---
 
@@ -241,14 +240,14 @@ cd frontend
 npm run dev
 ```
 
-Open **`http://localhost:3000`** in your browser.
+Open **`http://localhost:5173`** in your browser.
 
 **Default demo credentials:**
 ```
 Email:    hod@failsafe.edu
 Password: demo1234
 ```
-> First time? Run: `python backend/register_demo.py` to create the demo account.
+> First time? Run: `python backend/scripts/register_demo.py` to create the demo account.
 
 ### Docker Compose (Full Stack Alternative)
 ```bash
@@ -277,49 +276,54 @@ docker-compose up --build
 **Target Variable**
 - Binary: `G3 < 10` → **at-risk (1)**, else **not at-risk (0)**
 
-### Training Process
-
-```
-Raw CSV Upload
-     │
-     ▼
-Preprocessing (preprocess.py)
-  • Label encode categoricals
-  • Min-Max scale numerics
-  • SMOTE on training set (handle class imbalance)
-     │
-     ▼
-Train/Val/Test Split (70/15/15, stratified)
-     │
-     ▼
-XGBoost + GridSearchCV (5-fold CV, scoring: AUC-ROC)
-     │
-     ▼
-Evaluation → AUC-ROC, F1, Precision, Recall
-     │
-     ▼
-Serialisation → xgboost_model.pkl + scaler.pkl
-```
-
 ### Train the Model
+
+Both UCI CSVs use **semicolon** as delimiter. Place them at `data/student-mat.csv` and `data/student-por.csv`.
+
 ```bash
-# Place UCI dataset in data/raw/ first
 cd backend
-python ml/train.py --data ../data/raw/student-mat.csv --output ml/models/
+
+# Recommended: Combined Math + Portuguese (1,044 students)
+# Training on two subjects forces the model to learn SUBJECT-INDEPENDENT
+# behavioural patterns — aligns directly with PS goal of predicting risk
+# from attendance, study habits, and lifestyle signals, not just grades.
+python ml/train.py \
+  --data  ../data/student-mat.csv \
+  --data2 ../data/student-por.csv \
+  --output ml/models/ \
+  --all-phases
 ```
 
-### Model Performance (Achieved)
+This trains **three separate models** (one per phase) and generates artefacts in `ml/models/` (all gitignored — regenerate locally):
+- `model_phase0.pkl` + `scaler_phase0.pkl` + `threshold_phase0.json` — 30 behavioural features only
+- `model_phase1.pkl` + `scaler_phase1.pkl` + `threshold_phase1.json` — + G1 first period grade
+- `model_phase2.pkl` + `scaler_phase2.pkl` + `threshold_phase2.json` — + G1 + G2 period grades
+- `metrics_phase{0,1,2}.json` — full CV + test metrics for each phase
+- `plots_phase{0,1,2}/` — ROC curve, confusion matrix, feature importance charts
 
-| Metric | Score | Target |
-|---|---|---|
-| **AUC-ROC** | **0.91** | >= 0.88 |
-| **F1-Score** | **0.84** | >= 0.82 |
-| **Precision** | **0.81** | >= 0.78 |
-| **Recall** | **0.88** | >= 0.85 |
+### 3-Phase Prediction System
 
-> Recall is prioritised — it is better to flag a student who is fine than to miss a student who will fail.
+The professor selects which phase they are in when uploading student data:
 
-> **Note:** The app includes a smart heuristic fallback so it works even without a trained model.
+| Phase | When to Use | Features | Description |
+|---|---|---|---|
+| **Phase 0** 🌱 | Before Term 1 exams | 30 | Behavioural + socio-demographic only |
+| **Phase 1** 📈 | After Term 1 exams | 31 | + G1 (first period grade) |
+| **Phase 2** 🎯 | After Term 2 exams | 32 | + G1 + G2 (both period grades) |
+
+### Model Performance (Measured — 5-Fold CV, SMOTE inside each fold)
+
+> Trained on **combined Math + Portuguese cohort (1,044 students)** — two subjects combined so the model learns behavioural patterns that are independent of subject matter, directly aligning with the PS requirement to predict from "attendance, assignments, and behavioural data — not just grades". G1/G2 are mid-semester assessments added as optional signals per phase, never the final grade.
+
+| Phase | Features | CV AUC | CV Recall | CV F1 | Test AUC |
+|---|---|---|---|---|---|
+| **Phase 0** — No grades | 30 | 0.664 ± 0.026 | 0.857 ± 0.178 | 0.404 ± 0.036 | 0.714 |
+| **Phase 1** — + G1 | 31 | 0.916 ± 0.019 | 0.944 ± 0.033 | 0.634 ± 0.010 | 0.906 |
+| **Phase 2** — + G1 + G2 | 32 | **0.962 ± 0.015** | **0.965 ± 0.011** | **0.739 ± 0.034** | **0.966** |
+
+> **Recall is prioritised** — missing an at-risk student (false negative) is worse than a false alarm (false positive). Classification threshold tuned to maximise Recall ≥ 0.85 in each phase.
+
+> **Note:** The app includes a heuristic scoring fallback (using absences, failures, studytime, Walc) so it functions even without trained model files present.
 
 ---
 
@@ -483,10 +487,11 @@ CREATE TABLE interventions (
 
 **UCI Student Performance Data Set**
 - Source: [UCI ML Repository](https://archive.ics.uci.edu/dataset/320/student+performance)
-- File: `student-mat.csv` (395 records, 33 features)
+- File: `student-mat.csv` (395 records, 33 columns)
+- Features used: **30 behavioural + socio-demographic** (G1/G2 excluded per PS)
 - Target: `G3` (final grade) — binarised: `G3 < 10` = at-risk
 
-Place the file at: `data/raw/student-mat.csv`
+Place the file at: `data/student-mat.csv`
 
 ---
 
@@ -501,41 +506,9 @@ pytest tests/ -v
 ## 🔄 Reset Demo Data
 To clear all student data and start fresh (keeps user accounts):
 ```bash
-python backend/reset_data.py
+cd backend
+python reset_data.py
 ```
-
----
-
-## Roadmap & Milestones
-
-### Phase 1 — Foundation ✅
-- Repository setup, Docker Compose
-- PostgreSQL schema + SQLAlchemy ORM
-- JWT auth (register / login / refresh)
-
-### Phase 2 — ML Core ✅
-- Feature engineering pipeline
-- XGBoost + SMOTE training with GridSearchCV
-- SHAP explainer integration
-- Model evaluation + serialisation
-
-### Phase 3 — Intervention Engine ✅
-- Rule-based intervention catalogue (9 rules)
-- Plain-English SHAP summary generator
-- Intervention CRUD API endpoints
-
-### Phase 4 — Frontend ✅
-- Auth flow (Login, JWT context)
-- CSV upload with column validator
-- Student List with risk badges
-- Student Profile: SHAP chart + intervention plan
-- Dashboard: trend charts + summary stats
-- Kanban Intervention Tracker
-
-### Phase 5 — Testing & Deployment ✅
-- pytest backend test suite
-- GitHub Actions CI pipeline
-- Docker Compose production setup
 
 ---
 

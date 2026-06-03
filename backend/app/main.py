@@ -44,8 +44,11 @@ def health():
 
 
 @app.delete("/admin/reset")
-def reset_data(db: "Session" = __import__("fastapi").Depends(__import__("app.database", fromlist=["get_db"]).get_db)):
-    """Wipe all student data but keep users."""
+def reset_data(
+    db: "Session" = __import__("fastapi").Depends(__import__("app.database", fromlist=["get_db"]).get_db),
+    current_user: "User" = __import__("fastapi").Depends(__import__("app.auth.utils", fromlist=["require_hod"]).require_hod),
+):
+    """Wipe all student data but keep users. HOD/Admin only."""
     from app.models import Intervention, Prediction, FeatureSnapshot, Student
     db.query(Intervention).delete(synchronize_session=False)
     db.query(Prediction).delete(synchronize_session=False)

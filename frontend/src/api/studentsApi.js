@@ -9,12 +9,14 @@ export const studentsApi = {
     const { data } = await client.get(`/students/${id}`);
     return data;
   },
-  upload: async (file, weekNumber = 1) => {
+  upload: async (file, weekNumber = 1, phase = 0) => {
     const form = new FormData();
     form.append("file", file);
-    const { data } = await client.post(`/students/upload?week_number=${weekNumber}`, form, {
-      headers: { "Content-Type": "multipart/form-data" },
-    });
+    const { data } = await client.post(
+      `/students/upload?week_number=${weekNumber}&phase=${phase}`,
+      form,
+      { headers: { "Content-Type": "multipart/form-data" } }
+    );
     return data;
   },
   update: async (id, payload) => {
