@@ -5,7 +5,6 @@ Generates per-student SHAP values and a plain-English summary.
 import numpy as np
 from typing import Dict, Tuple, List
 import shap
-from ml.preprocess import ALL_FEATURES
 
 # Feature display names for plain-English output
 FEATURE_LABELS = {
@@ -28,22 +27,48 @@ FEATURE_LABELS = {
     "freetime": "free time after school",
     "famrel": "family relationship quality",
     "traveltime": "travel time to school",
+    # Engineered features
+    "disengagement_ratio": "academic disengagement (absences vs study time)",
+    "support_index": "total support level (family + school + tutoring)",
+    "alcohol_load": "weekly alcohol consumption load",
+    "lifestyle_imbalance": "leisure vs study imbalance",
+    "parental_edu": "combined parental education level",
+    # Grades
+    "G1": "first period grade",
+    "G2": "second period grade",
 }
 
 
-def compute_shap_values(model, X_vector: list) -> Dict[str, float]:
+_explainers = {}
+
+
+def compute_shap_values(model, X_vector: list, feature_names: list = None) -> Dict[str, float]:
     """
     Compute SHAP values for a single feature vector.
-    Returns a dict mapping feature_name → shap_value.
+    Returns a dict mapping feature_name -> shap_value.
+
+    Args:
+        model: Trained XGBoost model.
+        X_vector: Feature values as a list/array.
+        feature_names: Ordered list of feature names matching X_vector.
     """
-    import numpy as np
     X = np.array([X_vector])
-    explainer = shap.TreeExplainer(model)
+    
+    model_id = id(model)
+    if model_id not in _explainers:
+        _explainers[model_id] = shap.TreeExplainer(model)
+        
+    explainer = _explainers[model_id]
     sv = explainer.shap_values(X)  # shape: (1, n_features)
     # For binary classification, sv may be a list [class0, class1]
     if isinstance(sv, list):
         sv = sv[1]
-    return {feat: float(sv[0][i]) for i, feat in enumerate(ALL_FEATURES)}
+
+    if feature_names is None:
+        # Fallback: use generic feature names
+        feature_names = [f"feature_{i}" for i in range(len(X_vector))]
+
+    return {feat: float(sv[0][i]) for i, feat in enumerate(feature_names)}
 
 
 def generate_shap_summary(shap_dict: Dict[str, float], risk_level: str) -> str:

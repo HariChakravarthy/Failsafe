@@ -204,21 +204,39 @@ async def upload_csv(
     summary = UploadSummary(total_uploaded=0, high_risk=0, medium_risk=0, low_risk=0)
     errors = []
 
+    # Batch query existing students to avoid N+1 queries
+    student_codes = [str(code) for code in df["student_code"].tolist()]
+    existing_students = db.query(Student).filter(Student.student_code.in_(student_codes)).all()
+    student_map = {s.student_code: s for s in existing_students}
+
+    # Prepare data lists for batch prediction
+    batch_rows = []
+    batch_student_ids = []
+    batch_snapshot_ids = []
+    batch_assigned_to_ids = []
+    batch_students = []
+
     for _, row in df.iterrows():
         try:
-            student = db.query(Student).filter(Student.student_code == str(row["student_code"])).first()
+            student_code_str = str(row["student_code"])
+            student = student_map.get(student_code_str)
             if not student:
+                # Generate UUID in Python to link snapshot & prediction without db.flush()
                 student = Student(
-                    student_code=str(row["student_code"]),
-                    name=row.get("name"),
+                    id=uuid.uuid4(),
+                    student_code=student_code_str,
+                    name=row.get("name") if pd.notna(row.get("name")) else None,
                     age=int(row["age"]) if "age" in row and pd.notna(row["age"]) else None,
-                    gender=row.get("sex"),
+                    gender=row.get("sex") if pd.notna(row.get("sex")) else None,
                     faculty_id=current_user.id,
                 )
                 db.add(student)
-                db.flush()
-
+                student_map[student_code_str] = student
+            
+            # Generate snapshot ID in Python
+            snapshot_id = uuid.uuid4()
             snapshot = FeatureSnapshot(
+                id=snapshot_id,
                 student_id=student.id,
                 week_number=week_number,
                 absences=int(row.get("absences", 0)),
@@ -227,10 +245,32 @@ async def upload_csv(
                 raw_features=row.dropna().to_dict(),
             )
             db.add(snapshot)
-            db.flush()
 
-            prediction = run_prediction_pipeline(row.to_dict(), student.id, snapshot.id, db, phase=phase)
-            if prediction:
+            # Collect for batch pipeline
+            batch_rows.append(row.to_dict())
+            batch_student_ids.append(student.id)
+            batch_snapshot_ids.append(snapshot_id)
+            batch_assigned_to_ids.append(student.faculty_id if student.faculty_id else current_user.id)
+            batch_students.append(student)
+
+        except Exception as e:
+            errors.append(f"Row {row.get('student_code', '?')}: {e}")
+
+    # Run vectorized batch prediction and SHAP computation
+    if batch_rows:
+        try:
+            from ml.predict import run_prediction_pipeline_batch
+            predictions = run_prediction_pipeline_batch(
+                batch_rows,
+                batch_student_ids,
+                batch_snapshot_ids,
+                batch_assigned_to_ids,
+                db,
+                phase=phase
+            )
+            
+            # Aggregate stats and update student latest_risk field
+            for student, prediction in zip(batch_students, predictions):
                 student.latest_risk = prediction.risk_level
                 if prediction.risk_level == "HIGH":
                     summary.high_risk += 1
@@ -239,8 +279,9 @@ async def upload_csv(
                 else:
                     summary.low_risk += 1
                 summary.total_uploaded += 1
+                
         except Exception as e:
-            errors.append(f"Row {row.get('student_code', '?')}: {e}")
+            errors.append(f"Batch prediction failure: {e}")
 
     db.commit()
     summary.errors = errors

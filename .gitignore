@@ -62,3 +62,6 @@ logs/
 .pytest_cache/
 htmlcov/
 .coverage
+
+# Scratch / Local debugging
+backend/scratch/

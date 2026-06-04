@@ -104,7 +104,7 @@ FAILSAFE closes this gap with a four-layer system:
 | scikit-learn | Preprocessing, cross-validation, metrics |
 | SHAP | Feature-level explainability per prediction |
 | Pandas + NumPy | Data manipulation |
-| imbalanced-learn | SMOTE oversampling for minority (fail) class |
+| XGBoost scale_pos_weight | Handle class imbalance by scaling loss gradients (e.g. 3.54 for Phase 0) |
 
 ### Backend
 | Tool | Purpose |
@@ -311,15 +311,15 @@ The professor selects which phase they are in when uploading student data:
 | **Phase 1** 📈 | After Term 1 exams | 31 | + G1 (first period grade) |
 | **Phase 2** 🎯 | After Term 2 exams | 32 | + G1 + G2 (both period grades) |
 
-### Model Performance (Measured — 5-Fold CV, SMOTE inside each fold)
+### Model Performance (Measured — 5-Fold CV, scale_pos_weight for imbalance)
 
-> Trained on **combined Math + Portuguese cohort (1,044 students)** — two subjects combined so the model learns behavioural patterns that are independent of subject matter, directly aligning with the PS requirement to predict from "attendance, assignments, and behavioural data — not just grades". G1/G2 are mid-semester assessments added as optional signals per phase, never the final grade.
+> Trained on the combined Math + Portuguese datasets (**student-mat.csv** + **student-por.csv**, 1,044 students total) using 5-Fold Cross-Validation, native `scale_pos_weight` weighting (3.54 for Phase 0) to handle class imbalance, and MinMaxScaler scaling. G1/G2 are mid-semester assessments added as optional signals per phase, never the final grade.
 
-| Phase | Features | CV AUC | CV Recall | CV F1 | Test AUC |
-|---|---|---|---|---|---|
-| **Phase 0** — No grades | 30 | 0.664 ± 0.026 | 0.857 ± 0.178 | 0.404 ± 0.036 | 0.714 |
-| **Phase 1** — + G1 | 31 | 0.916 ± 0.019 | 0.944 ± 0.033 | 0.634 ± 0.010 | 0.906 |
-| **Phase 2** — + G1 + G2 | 32 | **0.962 ± 0.015** | **0.965 ± 0.011** | **0.739 ± 0.034** | **0.966** |
+| Phase | Features | CV AUC-PR | CV AUC-ROC | CV Recall | CV F2 | CV F1 | Test AUC-ROC |
+|---|---|---|---|---|---|---|---|
+| **Phase 0** — No grades | 41 | 0.473 ± 0.029 | 0.704 ± 0.038 | 0.904 ± 0.040 | 0.589 ± 0.022 | 0.388 ± 0.026 | 0.674 |
+| **Phase 1** — + G1 | 43 | 0.766 ± 0.055 | 0.917 ± 0.017 | 0.900 ± 0.029 | 0.801 ± 0.026 | 0.689 ± 0.033 | 0.909 |
+| **Phase 2** — + G1 + G2 | 44 | **0.906 ± 0.023** | **0.966 ± 0.012** | **0.904 ± 0.017** | **0.871 ± 0.022** | **0.827 ± 0.034** | **0.963** |
 
 > **Recall is prioritised** — missing an at-risk student (false negative) is worse than a false alarm (false positive). Classification threshold tuned to maximise Recall ≥ 0.85 in each phase.
 

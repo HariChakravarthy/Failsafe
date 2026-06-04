@@ -96,7 +96,8 @@ for f in ['absences','failures','studytime','Walc','Dalc','goout','famrel','high
 print()
 print("Feature importance from trained model (top 10):")
 importances = model.feature_importances_
-feat_imp = sorted(zip(PHASE_FEATURES[0], importances), key=lambda x: x[1], reverse=True)
+features_ohe = json.load(open('ml/models/features_phase0.json'))['features']
+feat_imp = sorted(zip(features_ohe, importances), key=lambda x: x[1], reverse=True)
 for f, imp in feat_imp[:10]:
     bar = "#" * int(imp * 300)
     print(f"  {f:<14} {imp:.4f}  {bar}")

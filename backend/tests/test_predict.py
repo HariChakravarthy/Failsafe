@@ -74,27 +74,27 @@ def test_score_low():
 # ── Feature vector lengths — all 3 phases ─────────────────────────────────────
 
 def test_feature_vector_phase0_length():
-    """Phase 0: 30 features (no grades)."""
-    from ml.preprocess import get_feature_vector, PHASE_FEATURES
+    """Phase 0: 41 features (no grades, redundant features dropped)."""
+    from ml.preprocess import get_feature_vector
     row = {"absences": 10, "studytime": 2, "failures": 1}
     vec = get_feature_vector(row, phase=0)
-    assert len(vec) == len(PHASE_FEATURES[0]) == 30
+    assert len(vec) == 41
 
 
 def test_feature_vector_phase1_length():
-    """Phase 1: 31 features (+G1)."""
-    from ml.preprocess import get_feature_vector, PHASE_FEATURES
+    """Phase 1: 43 features (+G1, redundant features dropped)."""
+    from ml.preprocess import get_feature_vector
     row = {"absences": 10, "studytime": 2, "failures": 1, "G1": 8}
     vec = get_feature_vector(row, phase=1)
-    assert len(vec) == len(PHASE_FEATURES[1]) == 31
+    assert len(vec) == 43
 
 
 def test_feature_vector_phase2_length():
-    """Phase 2: 32 features (+G1+G2)."""
-    from ml.preprocess import get_feature_vector, PHASE_FEATURES
+    """Phase 2: 44 features (+G1+G2, redundant features dropped)."""
+    from ml.preprocess import get_feature_vector
     row = {"absences": 10, "studytime": 2, "failures": 1, "G1": 8, "G2": 7}
     vec = get_feature_vector(row, phase=2)
-    assert len(vec) == len(PHASE_FEATURES[2]) == 32
+    assert len(vec) == 44
 
 
 def test_feature_vector_invalid_phase():
@@ -198,11 +198,18 @@ def test_metrics_json_exists():
 
 
 def test_phase2_auc_better_than_phase0():
-    """Phase 2 should always have better AUC than Phase 0 (more features)."""
+    """Phase 2 should always have better AUC (ROC and PR) than Phase 0 (more features)."""
     import json
-    m0 = json.load(open("ml/models/metrics_phase0.json"))["test"]["auc"]
-    m2 = json.load(open("ml/models/metrics_phase2.json"))["test"]["auc"]
-    assert m2 > m0, f"Phase 2 AUC ({m2}) should be > Phase 0 AUC ({m0})"
+    metrics0 = json.load(open("ml/models/metrics_phase0.json"))
+    metrics2 = json.load(open("ml/models/metrics_phase2.json"))
+    
+    m0_auc = metrics0["test"]["auc"]
+    m2_auc = metrics2["test"]["auc"]
+    assert m2_auc > m0_auc, f"Phase 2 AUC-ROC ({m2_auc}) should be > Phase 0 AUC-ROC ({m0_auc})"
+    
+    m0_pr = metrics0["test"]["auc_pr"]
+    m2_pr = metrics2["test"]["auc_pr"]
+    assert m2_pr > m0_pr, f"Phase 2 AUC-PR ({m2_pr}) should be > Phase 0 AUC-PR ({m0_pr})"
 
 
 def test_trained_model_predicts_valid_phase0():
