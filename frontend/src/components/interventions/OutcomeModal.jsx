@@ -1,7 +1,14 @@
 import React, { useState } from "react";
+import { CheckCircle2, MinusCircle, TrendingDown, X } from "lucide-react";
+
+const OPTIONS = [
+  { value: "IMPROVED", label: "Improved", icon: CheckCircle2 },
+  { value: "NO_CHANGE", label: "No Change", icon: MinusCircle },
+  { value: "DECLINED", label: "Declined", icon: TrendingDown },
+];
 
 export default function OutcomeModal({ isOpen, onClose, onSubmit, title }) {
-  const [outcome, setOutcome] = useState("IMPROVED"); // IMPROVED | NO_CHANGE | DECLINED
+  const [outcome, setOutcome] = useState("IMPROVED");
   const [notes, setNotes] = useState("");
 
   if (!isOpen) return null;
@@ -14,45 +21,34 @@ export default function OutcomeModal({ isOpen, onClose, onSubmit, title }) {
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-          <h3 style={{ fontSize: "1.15rem", fontWeight: 700 }}>Record Intervention Outcome</h3>
-          <button className="btn btn-ghost btn-icon btn-sm" onClick={onClose} style={{ border: "none", fontSize: "1.2rem" }}>
-            &times;
+        <div className="modal-header">
+          <div>
+            <h3>Record Intervention Outcome</h3>
+            <p>You are marking <strong>{title}</strong> as completed.</p>
+          </div>
+          <button className="btn btn-ghost btn-icon btn-sm" onClick={onClose} aria-label="Close">
+            <X size={17} />
           </button>
         </div>
-
-        <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginBottom: 16 }}>
-          You are marking <strong>{title}</strong> as completed. Please record the student's response to this intervention.
-        </p>
 
         <form onSubmit={handleSubmit}>
           <div className="form-group">
             <label className="form-label">Student Outcome</label>
             <div className="outcome-options">
-              <button
-                type="button"
-                className={`outcome-btn IMPROVED ${outcome === "IMPROVED" ? "active" : ""}`}
-                onClick={() => setOutcome("IMPROVED")}
-              >
-                <span style={{ fontSize: "1.2rem" }}>✅</span>
-                <span>Improved</span>
-              </button>
-              <button
-                type="button"
-                className={`outcome-btn NO_CHANGE ${outcome === "NO_CHANGE" ? "active" : ""}`}
-                onClick={() => setOutcome("NO_CHANGE")}
-              >
-                <span style={{ fontSize: "1.2rem" }}>➖</span>
-                <span>No Change</span>
-              </button>
-              <button
-                type="button"
-                className={`outcome-btn DECLINED ${outcome === "DECLINED" ? "active" : ""}`}
-                onClick={() => setOutcome("DECLINED")}
-              >
-                <span style={{ fontSize: "1.2rem" }}>⬇️</span>
-                <span>Declined</span>
-              </button>
+              {OPTIONS.map((option) => {
+                const Icon = option.icon;
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className={`outcome-btn ${option.value} ${outcome === option.value ? "active" : ""}`}
+                    onClick={() => setOutcome(option.value)}
+                  >
+                    <Icon size={20} />
+                    <span>{option.label}</span>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -61,20 +57,19 @@ export default function OutcomeModal({ isOpen, onClose, onSubmit, title }) {
             <textarea
               className="form-input"
               rows={3}
-              placeholder="Provide detail on student progress, attendance changes, or feedback..."
+              placeholder="Describe student progress, attendance changes, or feedback..."
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              style={{ resize: "vertical", fontFamily: "var(--font)", fontSize: "0.85rem" }}
               required
             />
           </div>
 
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 24 }}>
+          <div className="modal-actions">
             <button type="button" className="btn btn-ghost" onClick={onClose}>
               Cancel
             </button>
             <button type="submit" className="btn btn-primary">
-              ✓ Confirm Complete
+              Confirm Complete
             </button>
           </div>
         </form>

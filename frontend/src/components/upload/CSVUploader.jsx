@@ -1,4 +1,5 @@
 import React, { useCallback, useState } from "react";
+import { CheckCircle2, FileUp, Loader2 } from "lucide-react";
 import { useDropzone } from "react-dropzone";
 
 export default function CSVUploader({ onFile, loading }) {
@@ -18,24 +19,29 @@ export default function CSVUploader({ onFile, loading }) {
     disabled: loading,
   });
 
+  const Icon = loading ? Loader2 : fileName ? CheckCircle2 : FileUp;
+
   return (
-    <div {...getRootProps()} className={`dropzone${isDragActive ? " active" : ""}`}>
+    <div {...getRootProps()} className={`dropzone${isDragActive ? " active" : ""}${loading ? " loading" : ""}`}>
       <input {...getInputProps()} id="csv-upload-input" />
-      <div className="dropzone-icon">{loading ? "⏳" : fileName ? "✅" : "📂"}</div>
+      <div className="dropzone-icon"><Icon size={44} className={loading ? "spin-icon" : ""} /></div>
       {loading ? (
-        <div className="dropzone-title">Processing upload…</div>
+        <>
+          <div className="dropzone-title">Processing upload</div>
+          <div className="dropzone-sub">Predictions and interventions are being generated.</div>
+        </>
       ) : fileName ? (
         <>
           <div className="dropzone-title">{fileName}</div>
-          <div className="dropzone-sub">Click or drag to replace</div>
+          <div className="dropzone-sub">Click or drag a new file to replace it.</div>
         </>
       ) : (
         <>
           <div className="dropzone-title">
-            {isDragActive ? "Drop the CSV here" : "Drag & drop your CSV file"}
+            {isDragActive ? "Drop the CSV here" : "Drag and drop your CSV file"}
           </div>
           <div className="dropzone-sub">
-            or click to browse — supports student-mat.csv / student-por.csv format
+            Or click to browse. Supports standard comma or semicolon-delimited student CSV files.
           </div>
         </>
       )}

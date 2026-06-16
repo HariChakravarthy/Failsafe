@@ -1,7 +1,12 @@
 import React from "react";
+import { AlertTriangle, CheckCircle2, Clock3, UsersRound } from "lucide-react";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from "recharts";
 
-const COLORS = ["#ff4d6d", "#f6a623", "#2dd4bf"];
+const COLORS = {
+  "High Risk": "#e24b4b",
+  "Medium Risk": "#d9912b",
+  "Low Risk": "#169c89",
+};
 
 export default function SummaryStats({ summary }) {
   if (!summary) return null;
@@ -14,62 +19,49 @@ export default function SummaryStats({ summary }) {
     { name: "Low Risk", value: rd.low },
   ].filter((d) => d.value > 0);
 
+  const cards = [
+    { label: "Total Students", value: total_students, icon: UsersRound, tone: "navy" },
+    { label: "High Risk", value: rd.high, icon: AlertTriangle, tone: "high" },
+    { label: "Medium Risk", value: rd.medium, icon: Clock3, tone: "medium" },
+    { label: "Low Risk", value: rd.low, icon: CheckCircle2, tone: "low" },
+    { label: "Pending Actions", value: iv.pending, icon: Clock3, tone: "peach" },
+    { label: "Completed", value: iv.completed, icon: CheckCircle2, tone: "success" },
+  ];
+
   return (
     <div>
-      <div className="stats-grid" style={{ marginBottom: 24 }}>
-        <div className="stat-card">
-          <div className="stat-value">{total_students}</div>
-          <div className="stat-label">Total Students</div>
-          <div className="stat-icon">🎓</div>
-        </div>
-        <div className="stat-card high">
-          <div className="stat-value" style={{ color: "var(--risk-high)" }}>{rd.high}</div>
-          <div className="stat-label">High Risk</div>
-          <div className="stat-icon">🔴</div>
-        </div>
-        <div className="stat-card medium">
-          <div className="stat-value" style={{ color: "var(--risk-medium)" }}>{rd.medium}</div>
-          <div className="stat-label">Medium Risk</div>
-          <div className="stat-icon">🟡</div>
-        </div>
-        <div className="stat-card low">
-          <div className="stat-value" style={{ color: "var(--risk-low)" }}>{rd.low}</div>
-          <div className="stat-label">Low Risk</div>
-          <div className="stat-icon">🟢</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-value" style={{ color: "var(--warning)" }}>{iv.pending}</div>
-          <div className="stat-label">Interventions Pending</div>
-          <div className="stat-icon">⏳</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-value" style={{ color: "var(--success)" }}>{iv.completed}</div>
-          <div className="stat-label">Completed</div>
-          <div className="stat-icon">✅</div>
-        </div>
+      <div className="stats-grid">
+        {cards.map((card) => {
+          const Icon = card.icon;
+          return (
+            <div key={card.label} className={`stat-card ${card.tone}`}>
+              <div className="stat-icon"><Icon size={22} /></div>
+              <div className="stat-value">{card.value}</div>
+              <div className="stat-label">{card.label}</div>
+            </div>
+          );
+        })}
       </div>
 
       {pieData.length > 0 && (
-        <div className="card">
+        <div className="card risk-distribution-card">
           <div className="card-header">
             <div>
               <div className="card-title">Risk Distribution</div>
               <div className="card-subtitle">Current cohort snapshot</div>
             </div>
-            <div style={{ fontSize: "1.5rem", fontWeight: 800, color: "var(--risk-high)" }}>
-              {high_risk_percentage}% at-risk
-            </div>
+            <div className="risk-percentage">{high_risk_percentage}%</div>
           </div>
-          <ResponsiveContainer width="100%" height={200}>
+          <ResponsiveContainer width="100%" height={220}>
             <PieChart>
-              <Pie data={pieData} cx="50%" cy="50%" innerRadius={55} outerRadius={85} paddingAngle={4} dataKey="value">
-                {pieData.map((_, i) => (
-                  <Cell key={i} fill={COLORS[i]} stroke="transparent" />
+              <Pie data={pieData} cx="50%" cy="50%" innerRadius={60} outerRadius={88} paddingAngle={3} dataKey="value">
+                {pieData.map((entry) => (
+                  <Cell key={entry.name} fill={COLORS[entry.name]} stroke="transparent" />
                 ))}
               </Pie>
               <Tooltip
-                contentStyle={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 8 }}
-                labelStyle={{ color: "var(--text-primary)" }}
+                contentStyle={{ background: "#ffffff", border: "1px solid #d9e2ec", borderRadius: 8, color: "#0b1d3a" }}
+                labelStyle={{ color: "#0b1d3a" }}
               />
               <Legend wrapperStyle={{ fontSize: 12 }} />
             </PieChart>
