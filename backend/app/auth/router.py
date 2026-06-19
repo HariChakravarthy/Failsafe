@@ -15,8 +15,8 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 def register(payload: RegisterRequest, db: Session = Depends(get_db)):
     if db.query(User).filter(User.email == payload.email).first():
         raise HTTPException(status_code=400, detail="Email already registered")
-    if payload.role not in ("faculty", "hod", "admin"):
-        raise HTTPException(status_code=400, detail="Invalid role")
+    if payload.role != "faculty":
+        raise HTTPException(status_code=400, detail="Public registration is restricted to faculty accounts. Contact an administrator for HOD/admin access.")
     user = User(
         name=payload.name,
         email=payload.email,

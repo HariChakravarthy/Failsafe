@@ -11,16 +11,21 @@ from app.models import Intervention, Prediction
 
 
 # ── Catalogue ────────────────────────────────────────────────────────────────
+# Feature keys MUST match the names produced by ml/preprocess.py.
+# Raw features like absences, Walc, Dalc, studytime, goout, famsup are DROPPED
+# by REDUNDANT_BASE_FEATURES and replaced by engineered composites:
+#   disengagement_ratio, alcohol_load, lifestyle_imbalance, support_index, parental_edu
 CATALOGUE = [
     {
-        "feature": "absences",
+        "feature": "disengagement_ratio",
         "shap_threshold": 0.3,
         "type": "ATTENDANCE_REVIEW",
         "priority": "URGENT",
         "title": "Mandatory Attendance Review",
         "description": (
-            "Student's absence rate is a primary risk factor. "
-            "Schedule a one-on-one meeting immediately and notify parent/guardian."
+            "High disengagement ratio (absences relative to study effort) is a "
+            "primary risk factor. Schedule a one-on-one meeting immediately "
+            "and notify parent/guardian."
         ),
         "due_within_days": 3,
     },
@@ -37,49 +42,39 @@ CATALOGUE = [
         "due_within_days": 5,
     },
     {
-        "feature": "studytime",
+        "feature": "lifestyle_imbalance",
         "shap_threshold": 0.2,
         "type": "STUDY_PLAN",
         "priority": "HIGH",
-        "title": "Personalised Study Plan + Peer Mentoring",
+        "title": "Lifestyle & Study Balance Workshop",
         "description": (
-            "Low study time is a key risk driver. "
-            "Assign a peer mentor and provide a weekly structured study schedule."
+            "Lifestyle imbalance (high leisure vs low study time) is a key risk "
+            "driver. Assign a peer mentor and provide a weekly structured study "
+            "schedule."
         ),
         "due_within_days": 7,
     },
     {
-        "feature": "Walc",
-        "shap_threshold": 0.15,
+        "feature": "alcohol_load",
+        "shap_threshold": 0.2,
         "type": "WELLNESS_REFERRAL",
         "priority": "MEDIUM",
-        "title": "Wellness Counsellor Referral",
+        "title": "Wellness Counsellor Referral (Alcohol Load)",
         "description": (
-            "Weekend alcohol consumption is contributing to risk. "
-            "Refer student to the wellness counsellor for a confidential session."
+            "Combined alcohol consumption load (workday + weekend) is "
+            "contributing to academic risk. Refer student to the wellness "
+            "counsellor for a confidential session."
         ),
         "due_within_days": 10,
     },
     {
-        "feature": "Dalc",
-        "shap_threshold": 0.15,
-        "type": "WELLNESS_REFERRAL",
-        "priority": "MEDIUM",
-        "title": "Wellness Counsellor Referral",
-        "description": (
-            "Workday alcohol consumption is contributing to risk. "
-            "Refer student to the wellness counsellor for a confidential session."
-        ),
-        "due_within_days": 10,
-    },
-    {
-        "feature": "famsup",
-        "shap_threshold": 0.12,
+        "feature": "support_index",
+        "shap_threshold": -0.12,  # negative SHAP = low support = increased risk
         "type": "MENTOR_ASSIGNMENT",
         "priority": "MEDIUM",
         "title": "Faculty Mentor Assignment",
         "description": (
-            "Lack of family educational support is a risk factor. "
+            "Low overall support level (family + school) is a risk factor. "
             "Assign a faculty mentor to provide additional guidance and check-ins."
         ),
         "due_within_days": 7,
@@ -97,14 +92,14 @@ CATALOGUE = [
         "due_within_days": 7,
     },
     {
-        "feature": "goout",
-        "shap_threshold": 0.1,
-        "type": "TIME_MANAGEMENT",
+        "feature": "parental_edu",
+        "shap_threshold": -0.10,  # negative SHAP = low parental edu = risk
+        "type": "PARENT_ENGAGEMENT",
         "priority": "LOW",
-        "title": "Time Management Workshop",
+        "title": "Parent / Guardian Engagement Outreach",
         "description": (
-            "Frequent social outings are contributing to lower study time. "
-            "Recommend the next available time management workshop."
+            "Low combined parental education level is contributing to risk. "
+            "Initiate parent/guardian engagement program and provide study resources."
         ),
         "due_within_days": 14,
     },

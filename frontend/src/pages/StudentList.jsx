@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import Navbar from "../components/common/Navbar";
 import StudentTable from "../components/students/StudentTable";
@@ -14,15 +14,36 @@ export default function StudentList() {
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [riskFilter, setRiskFilter] = useState("ALL");
   const navigate = useNavigate();
   const SIZE = 20;
+  const debounceTimer = useRef(null);
+
+  // Debounce search input (300ms)
+  const handleSearchChange = (e) => {
+    const val = e.target.value;
+    setSearch(val);
+    if (debounceTimer.current) clearTimeout(debounceTimer.current);
+    debounceTimer.current = setTimeout(() => {
+      setDebouncedSearch(val);
+      setPage(1);
+    }, 300);
+  };
+
+  // Cleanup debounce timer on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceTimer.current) clearTimeout(debounceTimer.current);
+    };
+  }, []);
 
   const load = async () => {
     setLoading(true);
     try {
       const params = { page, size: SIZE };
-      if (search) params.search = search;
+      if (debouncedSearch) params.search = debouncedSearch;
+      if (riskFilter !== "ALL") params.risk_level = riskFilter;
       const data = await studentsApi.list(params);
       setStudents(data.items);
       setTotal(data.total);
@@ -33,13 +54,25 @@ export default function StudentList() {
     }
   };
 
-  useEffect(() => { load(); }, [page, search]);
-
-  const filtered = riskFilter === "ALL"
-    ? students
-    : students.filter((s) => s.latest_risk === riskFilter);
+  useEffect(() => { load(); }, [page, debouncedSearch, riskFilter]);
 
   const totalPages = Math.ceil(total / SIZE);
+
+  // Build pagination buttons with ellipsis for large page counts
+  const getPaginationButtons = () => {
+    if (totalPages <= 7) {
+      return Array.from({ length: totalPages }, (_, i) => i + 1);
+    }
+    const pages = [];
+    pages.push(1);
+    if (page > 3) pages.push("...");
+    for (let i = Math.max(2, page - 1); i <= Math.min(totalPages - 1, page + 1); i++) {
+      pages.push(i);
+    }
+    if (page < totalPages - 2) pages.push("...");
+    pages.push(totalPages);
+    return pages;
+  };
 
   return (
     <>
@@ -48,7 +81,7 @@ export default function StudentList() {
         <div className="section-header">
           <div>
             <h1 style={{ fontSize: "1.6rem", fontWeight: 800, marginBottom: 4 }}>All Students</h1>
-            <p style={{ color: "var(--text-secondary)", fontSize: "0.875rem" }}>{total} students in cohort</p>
+            <p style={{ color: "var(--text-secondary)", fontSize: "0.875rem" }}>{total} students{riskFilter !== "ALL" ? ` (${riskFilter} risk)` : " in cohort"}</p>
           </div>
           <button className="btn btn-primary" onClick={() => navigate("/upload")}>
             📤 Upload CSV
@@ -62,7 +95,7 @@ export default function StudentList() {
               id="student-search"
               placeholder="Search by name or code…"
               value={search}
-              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+              onChange={handleSearchChange}
             />
           </div>
           {RISK_FILTERS.map((f) => (
@@ -70,7 +103,7 @@ export default function StudentList() {
               key={f}
               id={`filter-${f.toLowerCase()}`}
               className={`btn btn-sm ${riskFilter === f ? "btn-primary" : "btn-ghost"}`}
-              onClick={() => setRiskFilter(f)}
+              onClick={() => { setRiskFilter(f); setPage(1); }}
             >
               {f === "ALL" ? "All" : <RiskBadge level={f} />}
             </button>
@@ -78,19 +111,23 @@ export default function StudentList() {
         </div>
 
         <div className="card">
-          <StudentTable students={filtered} loading={loading} />
+          <StudentTable students={students} loading={loading} />
         </div>
 
         {totalPages > 1 && (
           <div className="pagination">
             <button className="page-btn" disabled={page === 1} onClick={() => setPage(p => p - 1)}>←</button>
-            {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => i + 1).map((p) => (
-              <button
-                key={p}
-                className={`page-btn${page === p ? " active" : ""}`}
-                onClick={() => setPage(p)}
-              >{p}</button>
-            ))}
+            {getPaginationButtons().map((p, idx) =>
+              p === "..." ? (
+                <span key={`ellipsis-${idx}`} className="page-btn" style={{ cursor: "default", opacity: 0.5 }}>…</span>
+              ) : (
+                <button
+                  key={p}
+                  className={`page-btn${page === p ? " active" : ""}`}
+                  onClick={() => setPage(p)}
+                >{p}</button>
+              )
+            )}
             <button className="page-btn" disabled={page === totalPages} onClick={() => setPage(p => p + 1)}>→</button>
           </div>
         )}

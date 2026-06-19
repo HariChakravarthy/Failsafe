@@ -59,16 +59,22 @@ def test_score_high():
 
 def test_score_medium():
     from ml.predict import score_to_risk_level
-    assert score_to_risk_level(0.20) == "MEDIUM"
+    # Default threshold=0.5 → MEDIUM cutoff = 0.5 * 0.6 = 0.30
+    assert score_to_risk_level(0.30) == "MEDIUM"
     assert score_to_risk_level(0.35) == "MEDIUM"
     assert score_to_risk_level(0.49) == "MEDIUM"
+    # With real Phase 0 threshold 0.31 → MEDIUM cutoff = 0.31 * 0.6 = 0.186
+    assert score_to_risk_level(0.20, threshold=0.31) == "MEDIUM"
+    assert score_to_risk_level(0.30, threshold=0.31) == "MEDIUM"
 
 
 def test_score_low():
     from ml.predict import score_to_risk_level
     assert score_to_risk_level(0.00) == "LOW"
     assert score_to_risk_level(0.10) == "LOW"
-    assert score_to_risk_level(0.19) == "LOW"
+    assert score_to_risk_level(0.29) == "LOW"
+    # With real Phase 0 threshold 0.31 → LOW < 0.186
+    assert score_to_risk_level(0.15, threshold=0.31) == "LOW"
 
 
 # ── Feature vector lengths — all 3 phases ─────────────────────────────────────

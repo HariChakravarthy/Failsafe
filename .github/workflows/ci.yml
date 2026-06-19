@@ -42,7 +42,7 @@ jobs:
       - name: Train ML models
         run: |
           cd backend
-          python ml/train.py --data ../data/student-mat.csv --all-phases
+          python ml/train.py --data ../data/student-mat.csv --data2 ../data/student-por.csv --output ml/models/ --all-phases
 
       - name: Run pytest
         env:

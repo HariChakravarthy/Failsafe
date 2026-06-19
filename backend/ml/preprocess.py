@@ -14,7 +14,7 @@ not final grades, and are valid additional signals when available. Behavioural f
 Encoding strategy:
   - Binary yes/no columns → 0/1 integer encoding
   - Nominal multi-class columns (Mjob, Fjob, reason, guardian, school, sex,
-    address, famsize, Pstatus) → One-Hot Encoding (drop_first=True)
+    address, famsize, Pstatus) → One-Hot Encoding (drop_first=False)
   - Engineered interaction features added for stronger behavioural signal
 """
 import pandas as pd
@@ -123,21 +123,6 @@ def _encode_binary_cats(df: pd.DataFrame) -> pd.DataFrame:
             df[col] = df[col].str.lower().map(YES_NO_MAP).fillna(0).astype(int)
     return df
 
-
-def _encode_categoricals(df: pd.DataFrame) -> pd.DataFrame:
-    """Legacy encoder: label encode all categoricals (used by encode_row)."""
-    le = LabelEncoder()
-    for col in CATEGORICAL_FEATURES:
-        if col not in df.columns:
-            df[col] = 0
-            continue
-        if df[col].dtype == object:
-            lower = df[col].str.lower()
-            if set(lower.dropna().unique()) <= {"yes", "no"}:
-                df[col] = lower.map(YES_NO_MAP).fillna(0).astype(int)
-            else:
-                df[col] = le.fit_transform(df[col].astype(str))
-    return df
 
 
 def preprocess_dataframe(df: pd.DataFrame, phase: int = 0) -> pd.DataFrame:

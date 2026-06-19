@@ -72,17 +72,17 @@ def _get_feature_vector(row: dict, phase: int) -> tuple:
     return processed.values[0], list(processed.columns)
 
 
-def score_to_risk_level(score: float) -> str:
+def score_to_risk_level(score: float, threshold: float = 0.5) -> str:
     """
-    Convert raw model probability to a risk label.
-    Bands calibrated to match the trained classification threshold:
-      HIGH   >= 0.50  — strong model confidence: at-risk
-      MEDIUM >= 0.20  — moderate signal: warrants monitoring
-      LOW     < 0.20  — low probability: not flagged
+    Convert raw model probability to a risk label using dynamic threshold bands.
+    Bands are calibrated relative to the trained classification threshold:
+      HIGH   >= threshold       — strong model confidence: at-risk
+      MEDIUM >= threshold * 0.6 — moderate signal: warrants monitoring
+      LOW     < threshold * 0.6 — low probability: not flagged
     """
-    if score >= 0.50:
+    if score >= threshold:
         return "HIGH"
-    elif score >= 0.20:
+    elif score >= threshold * 0.6:
         return "MEDIUM"
     return "LOW"
 
@@ -120,13 +120,14 @@ def run_prediction_pipeline(
         # Heuristic fallback when no trained model is available
         prob = _mock_score(row, phase)
 
-    risk_level = score_to_risk_level(prob)
+    risk_level = score_to_risk_level(prob, threshold)
 
-    # SHAP explanation
+    # SHAP explanation (use scaled features for consistency with batch path)
     if model is not None:
         try:
             from ml.explain import compute_shap_values, generate_shap_summary
-            shap_dict = compute_shap_values(model, feature_vector, feature_names)
+            shap_input = X_scaled[0] if scaler is not None else feature_vector
+            shap_dict = compute_shap_values(model, shap_input, feature_names)
         except Exception:
             shap_dict = _mock_shap(row, phase)
     else:
@@ -231,7 +232,7 @@ def run_prediction_pipeline_batch(
     predictions = []
     for i in range(len(rows)):
         prob = float(probs[i])
-        risk_level = score_to_risk_level(prob)
+        risk_level = score_to_risk_level(prob, threshold)
         shap_dict = shap_dicts[i]
         shap_summary = generate_shap_summary(shap_dict, risk_level)
         
@@ -275,12 +276,13 @@ def run_simulation(
     else:
         prob = _mock_score(row, phase)
 
-    risk_level = score_to_risk_level(prob)
+    risk_level = score_to_risk_level(prob, threshold)
 
     if model is not None:
         try:
             from ml.explain import compute_shap_values, generate_shap_summary
-            shap_dict = compute_shap_values(model, feature_vector, feature_names)
+            shap_input = X_scaled[0] if scaler is not None else feature_vector
+            shap_dict = compute_shap_values(model, shap_input, feature_names)
         except Exception:
             shap_dict = _mock_shap(row, phase)
     else:
@@ -329,25 +331,33 @@ def _mock_score(row: Dict[str, Any], phase: int) -> float:
 
 
 def _mock_shap(row: Dict[str, Any], phase: int) -> Dict[str, float]:
-    """Approximate SHAP proxy values when model is unavailable."""
+    """Approximate SHAP proxy values when model is unavailable.
+
+    Returns feature names consistent with the engineered features produced
+    by ml/preprocess.py, so the intervention engine can trigger correctly.
+    """
     absences  = float(row.get("absences",  0))
     failures  = float(row.get("failures",  0))
     studytime = float(row.get("studytime", 2))
     walc      = float(row.get("Walc",      1))
+    dalc      = float(row.get("Dalc",      1))
+    goout     = float(row.get("goout",     2))
     famsup_raw = row.get("famsup", "yes")
-    famsup    = 0 if str(famsup_raw).lower() == "yes" else 0.15
+    famsup    = 1 if str(famsup_raw).lower() == "yes" else 0
+    health    = float(row.get("health", 3))
 
     shap = {
-        "absences":  round(absences  / 40 * 0.50, 4),
-        "failures":  round(failures  /  3 * 0.40, 4),
-        "studytime": round(-(studytime / 4) * 0.25, 4),
-        "Walc":      round(walc      /  5 * 0.15, 4),
-        "Dalc":      0.05,
-        "famsup":    famsup,
-        "health":   -0.05,
-        "goout":     0.08,
-        "romantic":  0.04,
-        "internet": -0.03,
+        # Engineered composite features (match preprocess.py output)
+        "disengagement_ratio": round(absences / 40 * 0.50, 4),
+        "alcohol_load":        round((walc + dalc) / 10 * 0.20, 4),
+        "lifestyle_imbalance": round((goout - studytime) / 5 * 0.15, 4),
+        "support_index":       round(-(1 - famsup) * 0.15, 4),
+        "parental_edu":       -0.05,
+        # Non-redundant raw features (survive preprocessing)
+        "failures":            round(failures / 3 * 0.40, 4),
+        "health":              round((3 - health) / 5 * 0.10, 4),
+        "romantic":            0.04,
+        "internet":           -0.03,
     }
 
     if phase >= 1:
@@ -358,3 +368,4 @@ def _mock_shap(row: Dict[str, Any], phase: int) -> Dict[str, float]:
         shap["G2"] = round(max(0.0, (10 - g2) / 10) * 0.25, 4)
 
     return shap
+

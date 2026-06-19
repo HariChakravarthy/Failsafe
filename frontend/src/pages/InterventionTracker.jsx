@@ -32,7 +32,7 @@ export default function InterventionTracker() {
   const load = async () => {
     setLoading(true);
     try {
-      const data = await interventionsApi.list({ size: 100 });
+      const data = await interventionsApi.list({ size: 500 });
       setAllItems(data.items || []);
     } catch {
       toast.error("Failed to load interventions");

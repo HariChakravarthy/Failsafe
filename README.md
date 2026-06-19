@@ -1,7 +1,7 @@
 # 🛡️ FAILSAFE — Early Student Failure Detection & Intervention System
 
 [![Python](https://img.shields.io/badge/Python-3.11-blue)](https://python.org)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.111-green)](https://fastapi.tiangolo.com)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115-green)](https://fastapi.tiangolo.com)
 [![React](https://img.shields.io/badge/React-18-blue)](https://reactjs.org)
 [![XGBoost](https://img.shields.io/badge/XGBoost-2.0-orange)](https://xgboost.ai)
 [![SHAP](https://img.shields.io/badge/SHAP-Explainable_AI-purple)](https://shap.readthedocs.io)
@@ -240,14 +240,14 @@ cd frontend
 npm run dev
 ```
 
-Open **`http://localhost:5173`** in your browser.
+Open **`http://localhost:3000`** in your browser.
 
 **Default demo credentials:**
 ```
 Email:    hod@failsafe.edu
 Password: demo1234
 ```
-> First time? Run: `python backend/scripts/register_demo.py` to create the demo account.
+> First time? Run: `python backend/register_demo.py` to create the demo account.
 
 ### Docker Compose (Full Stack Alternative)
 ```bash

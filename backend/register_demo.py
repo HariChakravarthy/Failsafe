@@ -1,20 +1,33 @@
-import urllib.request
-import json
+"""Seed demo HOD account directly via database (bypasses API role restriction)."""
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-data = json.dumps({
-    "name": "Demo HOD",
-    "email": "hod@failsafe.edu",
-    "password": "demo1234",
-    "role": "hod",
-    "department": "Computer Science"
-}).encode('utf-8')
+from app.database import SessionLocal
+from app.models import User
+from app.auth.utils import hash_password
 
-req = urllib.request.Request("http://localhost:8000/auth/register", data=data, headers={"Content-Type": "application/json"})
 
-try:
-    with urllib.request.urlopen(req) as response:
-        print(response.getcode())
-        print(response.read().decode('utf-8'))
-except urllib.error.HTTPError as e:
-    print(e.code)
-    print(e.read().decode('utf-8'))
+def seed_demo():
+    db = SessionLocal()
+    try:
+        existing = db.query(User).filter(User.email == "hod@failsafe.edu").first()
+        if existing:
+            print(f"Demo user already exists: {existing.email} (role={existing.role})")
+            return
+        user = User(
+            name="Demo HOD",
+            email="hod@failsafe.edu",
+            password_hash=hash_password("demo1234"),
+            role="hod",
+            department="Computer Science",
+        )
+        db.add(user)
+        db.commit()
+        print(f"Created demo user: {user.email} (role={user.role})")
+    finally:
+        db.close()
+
+
+if __name__ == "__main__":
+    seed_demo()

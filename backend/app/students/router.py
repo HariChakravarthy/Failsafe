@@ -16,7 +16,7 @@ router = APIRouter(prefix="/students", tags=["students"])
 @router.get("", response_model=StudentListOut)
 def list_students(
     page: int = Query(1, ge=1),
-    size: int = Query(20, ge=1, le=100),
+    size: int = Query(20, ge=1, le=1000),
     risk_level: Optional[str] = None,
     search: Optional[str] = None,
     db: Session = Depends(get_db),
@@ -29,6 +29,29 @@ def list_students(
         query = query.filter(
             (Student.name.ilike(f"%{search}%")) | (Student.student_code.ilike(f"%{search}%"))
         )
+
+    # Server-side risk level filtering via latest prediction subquery
+    if risk_level:
+        latest_pred_subq = (
+            db.query(
+                Prediction.student_id,
+                func.max(Prediction.predicted_at).label("max_at"),
+            )
+            .group_by(Prediction.student_id)
+            .subquery()
+        )
+        risk_filter_q = (
+            db.query(Prediction.student_id)
+            .join(
+                latest_pred_subq,
+                (Prediction.student_id == latest_pred_subq.c.student_id)
+                & (Prediction.predicted_at == latest_pred_subq.c.max_at),
+            )
+            .filter(Prediction.risk_level == risk_level.upper())
+            .subquery()
+        )
+        query = query.filter(Student.id.in_(db.query(risk_filter_q.c.student_id)))
+
     total = query.count()
     items = query.offset((page - 1) * size).limit(size).all()
 
@@ -179,6 +202,8 @@ async def upload_csv(
         raise HTTPException(status_code=400, detail="Only CSV files are accepted")
 
     content = await file.read()
+    if len(content) > 10 * 1024 * 1024:  # 10 MB limit
+        raise HTTPException(status_code=400, detail="CSV file too large. Maximum size is 10 MB.")
     try:
         # Auto-detect delimiter: UCI files use ';', most exports use ','
         sample = content[:2048].decode("utf-8", errors="ignore")
@@ -200,6 +225,12 @@ async def upload_csv(
     missing = required_cols - set(df.columns)
     if missing:
         raise HTTPException(status_code=400, detail=f"Missing required columns: {missing}")
+
+    # Phase-specific grade column requirements
+    if phase >= 1 and "G1" not in df.columns:
+        raise HTTPException(status_code=400, detail="Phase 1/2 uploads require a 'G1' column (first period grade)")
+    if phase >= 2 and "G2" not in df.columns:
+        raise HTTPException(status_code=400, detail="Phase 2 uploads require a 'G2' column (second period grade)")
 
     summary = UploadSummary(total_uploaded=0, high_risk=0, medium_risk=0, low_risk=0)
     errors = []
