@@ -1,4 +1,5 @@
 import React from "react";
+import { GraduationCap, UserRound } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import RiskBadge from "../common/RiskBadge";
 import { fmtDate } from "../../utils/formatters";
@@ -17,9 +18,9 @@ export default function StudentTable({ students, loading }) {
   if (!students?.length) {
     return (
       <div className="empty-state">
-        <div className="empty-icon">🎓</div>
+        <div className="empty-icon"><GraduationCap size={42} /></div>
         <div className="empty-title">No students found</div>
-        <div className="empty-sub">Upload a CSV to get started</div>
+        <div className="empty-sub">Upload a CSV or adjust the current filters.</div>
       </div>
     );
   }
@@ -41,25 +42,26 @@ export default function StudentTable({ students, loading }) {
         <tbody>
           {students.map((s) => (
             <tr key={s.id}>
-              <td style={{ fontFamily: "var(--font-mono)", color: "var(--accent)", fontSize: "0.82rem" }}>
-                {s.student_code}
-              </td>
-              <td style={{ fontWeight: 600 }}>{s.name || "—"}</td>
-              <td style={{ color: "var(--text-secondary)" }}>{s.department || "—"}</td>
-              <td style={{ color: "var(--text-secondary)" }}>
-                {s.semester ? `Sem ${s.semester}` : "—"}
-              </td>
+              <td className="mono-cell">{s.student_code}</td>
               <td>
-                {s.latest_risk ? <RiskBadge level={s.latest_risk} /> : <span style={{ color: "var(--text-muted)", fontSize: "0.8rem" }}>Pending</span>}
+                <div className="student-name-cell">
+                  <span className="student-mini-avatar"><UserRound size={15} /></span>
+                  <strong>{s.name || "Unnamed student"}</strong>
+                </div>
               </td>
-              <td style={{ color: "var(--text-secondary)", fontSize: "0.8rem" }}>{fmtDate(s.created_at)}</td>
+              <td>{s.department || "Not assigned"}</td>
+              <td>{s.semester ? `Semester ${s.semester}` : "Not set"}</td>
               <td>
+                {s.latest_risk ? <RiskBadge level={s.latest_risk} /> : <span className="muted-text">Pending</span>}
+              </td>
+              <td>{fmtDate(s.created_at)}</td>
+              <td className="table-action-cell">
                 <button
                   className="btn btn-ghost btn-sm"
                   id={`view-student-${s.id}`}
                   onClick={() => navigate(`/students/${s.id}`)}
                 >
-                  View →
+                  View Profile
                 </button>
               </td>
             </tr>

@@ -1,7 +1,6 @@
 import React from "react";
-import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
 
-const COLORS = { HIGH: "#ff4d6d", MEDIUM: "#f6a623", LOW: "#2dd4bf" };
+const COLORS = { HIGH: "#e24b4b", MEDIUM: "#d9912b", LOW: "#169c89" };
 const NEEDLE_R = 10;
 
 export default function RiskGauge({ score, level }) {
@@ -16,11 +15,6 @@ export default function RiskGauge({ score, level }) {
 
   const arcColor = COLORS[level] || "#4f8ef7";
 
-  const data = [
-    { name: "risk", value: pct },
-    { name: "rest", value: 100 - pct },
-  ];
-
   return (
     <div className="gauge-wrapper">
       <div style={{ position: "relative", width: 220, height: 140 }}>
@@ -29,7 +23,7 @@ export default function RiskGauge({ score, level }) {
           {/* Track */}
           <path
             d="M 30 110 A 80 80 0 1 1 190 110"
-            fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="18" strokeLinecap="round"
+            fill="none" stroke="#e5edf5" strokeWidth="18" strokeLinecap="round"
           />
           {/* Filled portion */}
           <path
