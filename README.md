@@ -168,7 +168,8 @@ failsafe/
 │       ├── api/                # Axios API helpers (auth, students, predictions)
 │       └── context/            # AuthContext (JWT + role)
 ├── data/
-│   └── raw/                    # Place student-mat.csv here for training
+│   ├── student-mat.csv         # Math student records (395 records)
+│   └── student-por.csv         # Portuguese student records (649 records)
 ├── docker-compose.yml
 ├── .gitignore
 └── .github/workflows/ci.yml    # GitHub Actions CI pipeline
@@ -487,11 +488,11 @@ CREATE TABLE interventions (
 
 **UCI Student Performance Data Set**
 - Source: [UCI ML Repository](https://archive.ics.uci.edu/dataset/320/student+performance)
-- File: `student-mat.csv` (395 records, 33 columns)
-- Features used: **30 behavioural + socio-demographic** (G1/G2 excluded per PS)
+- Files: `student-mat.csv` (395 records) and `student-por.csv` (649 records) — combined **1,044 records**
+- Features used: **30 behavioural + socio-demographic features** (with G1/G2 added as optional signals in Phase 1 & 2)
 - Target: `G3` (final grade) — binarised: `G3 < 10` = at-risk
 
-Place the file at: `data/student-mat.csv`
+Place files at: `data/student-mat.csv` and `data/student-por.csv`
 
 ---
 
