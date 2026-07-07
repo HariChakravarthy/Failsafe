@@ -2,6 +2,7 @@ import React from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import Sidebar from "./components/common/Sidebar";
+import Navbar from "./components/common/Navbar";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import UploadData from "./pages/UploadData";
@@ -16,6 +17,7 @@ function ProtectedRoute({ children }) {
   if (!user) return <Navigate to="/login" replace />;
   return (
     <div className="app-layout">
+      <Navbar />
       <Sidebar />
       <main className="main-content">{children}</main>
     </div>

@@ -53,10 +53,15 @@ def get_current_user(
     db: Session = Depends(get_db),
 ) -> User:
     payload = decode_token(credentials.credentials)
+    if payload.get("type") != "access":
+        raise HTTPException(status_code=401, detail="Not an access token")
     user_id: str = payload.get("sub")
     if not user_id:
         raise HTTPException(status_code=401, detail="Invalid token payload")
-    user = db.query(User).filter(User.id == uuid.UUID(user_id)).first()
+    try:
+        user = db.query(User).filter(User.id == uuid.UUID(user_id)).first()
+    except ValueError:
+        raise HTTPException(status_code=401, detail="Invalid token payload")
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
     return user

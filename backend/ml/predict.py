@@ -1,34 +1,88 @@
 """
-Inference wrapper.
-Loads the trained model + scaler, runs prediction, stores result in DB,
+Inference wrapper — 3-Phase Adaptive Prediction System.
+
+Loads the phase-appropriate model + scaler, runs prediction, stores result in DB,
 and triggers SHAP explanation + intervention generation.
+
+Phase 0: behavioural + engineered features — used before Term 1 exams
+Phase 1: + G1 first period grade — available after Term 1
+Phase 2: + G1 + G2 second period grades — available after Term 2
 """
 import os
 import uuid
+import json
 import joblib
 import numpy as np
-from typing import Optional, Dict, Any
+import pandas as pd
+from typing import Optional, Dict, Any, List
 from sqlalchemy.orm import Session
 from app.models import Prediction, Intervention
-from app.config import settings
-from ml.preprocess import get_feature_vector, ALL_FEATURES
+from ml.preprocess import preprocess_dataframe, PHASE_FEATURES
 
-_model = None
-_scaler = None
+# ── Per-phase model cache ─────────────────────────────────────────────────────
+_models     = {}  # phase -> model
+_scalers    = {}  # phase -> scaler
+_thresholds = {}  # phase -> float
+_features   = {}  # phase -> list of feature names (column order)
 
-
-def _load_model():
-    global _model, _scaler
-    if _model is None and os.path.exists(settings.MODEL_PATH):
-        _model = joblib.load(settings.MODEL_PATH)
-    if _scaler is None and os.path.exists(settings.SCALER_PATH):
-        _scaler = joblib.load(settings.SCALER_PATH)
+MODELS_DIR = "ml/models"
 
 
-def score_to_risk_level(score: float) -> str:
-    if score >= 0.65:
+def _load_phase_model(phase: int):
+    """Lazily load and cache the model/scaler/threshold/features for a given phase."""
+    if phase in _models:
+        return  # already loaded
+
+    model_path     = os.path.join(MODELS_DIR, f"model_phase{phase}.pkl")
+    scaler_path    = os.path.join(MODELS_DIR, f"scaler_phase{phase}.pkl")
+    threshold_path = os.path.join(MODELS_DIR, f"threshold_phase{phase}.json")
+    features_path  = os.path.join(MODELS_DIR, f"features_phase{phase}.json")
+
+    if os.path.exists(model_path):
+        _models[phase]  = joblib.load(model_path)
+    if os.path.exists(scaler_path):
+        _scalers[phase] = joblib.load(scaler_path)
+    if os.path.exists(threshold_path):
+        with open(threshold_path) as f:
+            _thresholds[phase] = json.load(f).get("threshold", 0.5)
+    else:
+        _thresholds[phase] = 0.5
+    if os.path.exists(features_path):
+        with open(features_path) as f:
+            _features[phase] = json.load(f).get("features", [])
+
+
+def _get_feature_vector(row: dict, phase: int) -> tuple:
+    """
+    Convert a raw row dict to a feature vector using the full preprocessing pipeline.
+    Returns (feature_vector as numpy array, feature_names as list).
+    """
+    row_df = pd.DataFrame([row])
+    processed = preprocess_dataframe(row_df, phase=phase)
+
+    # If we have saved feature names from training, align columns
+    saved_features = _features.get(phase)
+    if saved_features:
+        # Add missing columns with 0, remove extra columns, reorder
+        for col in saved_features:
+            if col not in processed.columns:
+                processed[col] = 0
+        processed = processed[saved_features]
+
+    return processed.values[0], list(processed.columns)
+
+
+def score_to_risk_level(score: float, threshold: float = 0.5) -> str:
+    """
+    Convert raw model probability to a risk label using dynamic threshold bands.
+    Bands are calibrated relative to the trained classification threshold:
+      HIGH   >= threshold       — strong model confidence: at-risk
+      MEDIUM >= threshold * 0.6 — moderate signal: warrants monitoring
+      LOW     < threshold * 0.6 — low probability: not flagged
+    """
+    if score >= threshold:
         return "HIGH"
-    elif score >= 0.35:
+    elif score >= threshold * 0.6:
         return "MEDIUM"
     return "LOW"
 
@@ -38,41 +92,46 @@ def run_prediction_pipeline(
     student_id: uuid.UUID,
     snapshot_id: uuid.UUID,
     db: Session,
+    phase: int = 0,
 ) -> Optional[Prediction]:
     """
     Run full prediction pipeline for a single student row.
-    1. Feature vector extraction
-    2. Model scoring (or mock scoring if model not trained yet)
-    3. SHAP explanation
-    4. Persist Prediction + Interventions
-    """
-    _load_model()
 
-    feature_vector = get_feature_vector(row)
+    Args:
+        row:         Raw feature dict from CSV upload.
+        student_id:  Student UUID.
+        snapshot_id: FeatureSnapshot UUID.
+        db:          SQLAlchemy session.
+        phase:       0 (no grades), 1 (+G1), or 2 (+G1+G2).
+    """
+    _load_phase_model(phase)
+
+    feature_vector, feature_names = _get_feature_vector(row, phase)
     X = np.array([feature_vector])
 
-    if _model is not None:
-        if _scaler is not None:
-            X = _scaler.transform(X)
-        prob = float(_model.predict_proba(X)[0][1])
+    model  = _models.get(phase)
+    scaler = _scalers.get(phase)
+    threshold = _thresholds.get(phase, 0.5)
+
+    if model is not None and scaler is not None:
+        X_scaled = scaler.transform(X)
+        prob = float(model.predict_proba(X_scaled)[0][1])
     else:
-        # Heuristic mock scoring when model not trained yet
-        absences = float(row.get("absences", 0))
-        failures = float(row.get("failures", 0))
-        studytime = float(row.get("studytime", 2))
-        prob = min(0.95, max(0.05, (absences / 40) * 0.5 + (failures / 3) * 0.35 + (1 - studytime / 4) * 0.15))
+        # Heuristic fallback when no trained model is available
+        prob = _mock_score(row, phase)
 
-    risk_level = score_to_risk_level(prob)
+    risk_level = score_to_risk_level(prob, threshold)
 
-    # SHAP values
-    if _model is not None:
+    # SHAP explanation (use scaled features for consistency with batch path)
+    if model is not None:
         try:
             from ml.explain import compute_shap_values, generate_shap_summary
-            shap_dict = compute_shap_values(_model, feature_vector)
+            shap_input = X_scaled[0] if scaler is not None else feature_vector
+            shap_dict = compute_shap_values(model, shap_input, feature_names)
         except Exception:
-            shap_dict = _mock_shap(row)
+            shap_dict = _mock_shap(row, phase)
     else:
-        shap_dict = _mock_shap(row)
+        shap_dict = _mock_shap(row, phase)
 
     from ml.explain import generate_shap_summary
     shap_summary = generate_shap_summary(shap_dict, risk_level)
@@ -88,9 +147,8 @@ def run_prediction_pipeline(
     db.add(prediction)
     db.flush()
 
-    # Generate interventions
+    # Auto-generate interventions
     from app.interventions.engine import generate_interventions
-    # Use student's faculty_id as assigned_to (or a system user)
     from app.models import Student
     student = db.query(Student).filter(Student.id == student_id).first()
     assigned_to = student.faculty_id if student and student.faculty_id else student_id
@@ -99,72 +157,215 @@ def run_prediction_pipeline(
     return prediction
 
 
-def _mock_shap(row: Dict[str, Any]) -> Dict[str, float]:
-    """Generate approximate SHAP proxy values from raw feature values when model is unavailable."""
-    absences = float(row.get("absences", 0))
-    failures = float(row.get("failures", 0))
-    studytime = float(row.get("studytime", 2))
-    walc = float(row.get("Walc", 1))
-    famsup_raw = row.get("famsup", "yes")
-    famsup = 0 if str(famsup_raw).lower() == "yes" else 0.15
-
-    return {
-        "absences": round(absences / 40 * 0.5, 4),
-        "failures": round(failures / 3 * 0.4, 4),
-        "studytime": round(-(studytime / 4) * 0.25, 4),
-        "Walc": round(walc / 5 * 0.15, 4),
-        "Dalc": 0.05,
-        "famsup": famsup,
-        "health": -0.05,
-        "goout": 0.08,
-        "romantic": 0.04,
-        "internet": -0.03,
-        **{f: 0.0 for f in ALL_FEATURES if f not in {
-            "absences", "failures", "studytime", "Walc", "Dalc",
-            "famsup", "health", "goout", "romantic", "internet",
-        }},
-    }
-
-
-def run_simulation(row: Dict[str, Any]) -> Dict[str, Any]:
+def run_prediction_pipeline_batch(
+    rows: List[Dict[str, Any]],
+    student_ids: List[uuid.UUID],
+    snapshot_ids: List[uuid.UUID],
+    assigned_to_ids: List[uuid.UUID],
+    db: Session,
+    phase: int = 0,
+) -> List[Prediction]:
     """
-    Run prediction pipeline for a single row without DB updates/interventions.
+    Run full prediction pipeline for a batch of student rows.
+    Highly optimized to run OHE preprocessing, model scoring, and SHAP calculations
+    in vectorized batch mode instead of row-by-row in a loop.
     """
-    _load_model()
+    if not rows:
+        return []
 
-    feature_vector = get_feature_vector(row)
+    _load_phase_model(phase)
+    model = _models.get(phase)
+    scaler = _scalers.get(phase)
+    threshold = _thresholds.get(phase, 0.5)
+    saved_features = _features.get(phase, [])
+
+    # Batch preprocess
+    df = pd.DataFrame(rows)
+    processed = preprocess_dataframe(df, phase=phase)
+
+    # Align columns
+    if saved_features:
+        for col in saved_features:
+            if col not in processed.columns:
+                processed[col] = 0
+        processed = processed[saved_features]
+
+    X = processed.values
+
+    # Batch model prediction
+    if model is not None and scaler is not None:
+        X_scaled = scaler.transform(X)
+        probs = model.predict_proba(X_scaled)[:, 1]
+    else:
+        probs = np.array([_mock_score(row, phase) for row in rows])
+
+    # Batch SHAP computation
+    if model is not None:
+        try:
+            from ml.explain import _explainers
+            import shap
+            model_id = id(model)
+            if model_id not in _explainers:
+                _explainers[model_id] = shap.TreeExplainer(model)
+            explainer = _explainers[model_id]
+            
+            # explainer.shap_values on entire batch
+            X_scaled_data = X_scaled if (scaler is not None) else X
+            sv = explainer.shap_values(X_scaled_data)
+            if isinstance(sv, list):
+                sv = sv[1]
+                
+            feature_names = list(processed.columns)
+            shap_dicts = [
+                {feat: float(sv[i][j]) for j, feat in enumerate(feature_names)}
+                for i in range(len(rows))
+            ]
+        except Exception:
+            shap_dicts = [_mock_shap(row, phase) for row in rows]
+    else:
+        shap_dicts = [_mock_shap(row, phase) for row in rows]
+
+    # Generate predictions and interventions
+    from ml.explain import generate_shap_summary
+    from app.interventions.engine import generate_interventions
+    
+    predictions = []
+    for i in range(len(rows)):
+        prob = float(probs[i])
+        risk_level = score_to_risk_level(prob, threshold)
+        shap_dict = shap_dicts[i]
+        shap_summary = generate_shap_summary(shap_dict, risk_level)
+        
+        prediction = Prediction(
+            id=uuid.uuid4(),  # Generate UUID in Python to link relationship
+            student_id=student_ids[i],
+            snapshot_id=snapshot_ids[i],
+            risk_score=round(prob, 4),
+            risk_level=risk_level,
+            shap_values=shap_dict,
+            shap_summary=shap_summary,
+        )
+        db.add(prediction)
+        predictions.append(prediction)
+        
+        # Generate interventions for this prediction
+        generate_interventions(prediction, assigned_to_ids[i], db)
+
+    return predictions
+
+
+def run_simulation(
+    row: Dict[str, Any],
+    phase: int = 0,
+) -> Dict[str, Any]:
+    """
+    What-if simulation — no DB write. Returns score + SHAP for UI display.
+    """
+    _load_phase_model(phase)
+
+    feature_vector, feature_names = _get_feature_vector(row, phase)
     X = np.array([feature_vector])
 
-    if _model is not None:
-        if _scaler is not None:
-            X = _scaler.transform(X)
-        prob = float(_model.predict_proba(X)[0][1])
+    model  = _models.get(phase)
+    scaler = _scalers.get(phase)
+    threshold = _thresholds.get(phase, 0.5)
+
+    if model is not None and scaler is not None:
+        X_scaled = scaler.transform(X)
+        prob = float(model.predict_proba(X_scaled)[0][1])
     else:
-        # Heuristic mock scoring when model not trained yet
-        absences = float(row.get("absences", 0))
-        failures = float(row.get("failures", 0))
-        studytime = float(row.get("studytime", 2))
-        prob = min(0.95, max(0.05, (absences / 40) * 0.5 + (failures / 3) * 0.35 + (1 - studytime / 4) * 0.15))
+        prob = _mock_score(row, phase)
 
-    risk_level = score_to_risk_level(prob)
+    risk_level = score_to_risk_level(prob, threshold)
 
-    # SHAP values
-    if _model is not None:
+    if model is not None:
         try:
-            from ml.explain import compute_shap_values
-            shap_dict = compute_shap_values(_model, feature_vector)
+            from ml.explain import compute_shap_values, generate_shap_summary
+            shap_input = X_scaled[0] if scaler is not None else feature_vector
+            shap_dict = compute_shap_values(model, shap_input, feature_names)
         except Exception:
-            shap_dict = _mock_shap(row)
+            shap_dict = _mock_shap(row, phase)
     else:
-        shap_dict = _mock_shap(row)
+        shap_dict = _mock_shap(row, phase)
 
     from ml.explain import generate_shap_summary
     shap_summary = generate_shap_summary(shap_dict, risk_level)
 
     return {
-        "risk_score": round(prob, 4),
-        "risk_level": risk_level,
-        "shap_values": shap_dict,
+        "risk_score":   round(prob, 4),
+        "risk_level":   risk_level,
+        "shap_values":  shap_dict,
         "shap_summary": shap_summary,
+        "phase":        phase,
+        "threshold":    threshold,
     }
+
+
+# ── Heuristic fallbacks (used only when model files are absent) ───────────────
+
+def _mock_score(row: Dict[str, Any], phase: int) -> float:
+    """Heuristic scoring fallback. Uses grades when available (phase >= 1)."""
+    absences  = float(row.get("absences",  0))
+    failures  = float(row.get("failures",  0))
+    studytime = float(row.get("studytime", 2))
+    walc      = float(row.get("Walc",      1))
+
+    base = (
+        (absences  / 40) * 0.40
+        + (failures  /  3) * 0.30
+        + (1 - studytime / 4) * 0.10
+        + (walc      /  5) * 0.05
+    )
+
+    if phase >= 1:
+        g1 = float(row.get("G1", 10))
+        grade_penalty = max(0.0, (10 - g1) / 10) * 0.10
+        base += grade_penalty
+
+    if phase >= 2:
+        g2 = float(row.get("G2", 10))
+        grade_penalty = max(0.0, (10 - g2) / 10) * 0.05
+        base += grade_penalty
+
+    return min(0.95, max(0.05, base))
+
+
+def _mock_shap(row: Dict[str, Any], phase: int) -> Dict[str, float]:
+    """Approximate SHAP proxy values when model is unavailable.
+
+    Returns feature names consistent with the engineered features produced
+    by ml/preprocess.py, so the intervention engine can trigger correctly.
+    """
+    absences  = float(row.get("absences",  0))
+    failures  = float(row.get("failures",  0))
+    studytime = float(row.get("studytime", 2))
+    walc      = float(row.get("Walc",      1))
+    dalc      = float(row.get("Dalc",      1))
+    goout     = float(row.get("goout",     2))
+    famsup_raw = row.get("famsup", "yes")
+    famsup    = 1 if str(famsup_raw).lower() == "yes" else 0
+    health    = float(row.get("health", 3))
+
+    shap = {
+        # Engineered composite features (match preprocess.py output)
+        "disengagement_ratio": round(absences / 40 * 0.50, 4),
+        "alcohol_load":        round((walc + dalc) / 10 * 0.20, 4),
+        "lifestyle_imbalance": round((goout - studytime) / 5 * 0.15, 4),
+        "support_index":       round(-(1 - famsup) * 0.15, 4),
+        "parental_edu":       -0.05,
+        # Non-redundant raw features (survive preprocessing)
+        "failures":            round(failures / 3 * 0.40, 4),
+        "health":              round((3 - health) / 5 * 0.10, 4),
+        "romantic":            0.04,
+        "internet":           -0.03,
+    }
+
+    if phase >= 1:
+        g1 = float(row.get("G1", 10))
+        shap["G1"] = round(max(0.0, (10 - g1) / 10) * 0.30, 4)
+    if phase >= 2:
+        g2 = float(row.get("G2", 10))
+        shap["G2"] = round(max(0.0, (10 - g2) / 10) * 0.25, 4)
+
+    return shap
 

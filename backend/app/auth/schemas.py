@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 from typing import Optional
 import uuid
 
@@ -6,7 +6,7 @@ import uuid
 class RegisterRequest(BaseModel):
     name: str
     email: EmailStr
-    password: str
+    password: str = Field(..., min_length=8)
     role: str = "faculty"
     department: Optional[str] = None
 

@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from "react";
-import Navbar from "../components/common/Navbar";
+import { useNavigate } from "react-router-dom";
+import { Check, Play, RefreshCw, UserRound } from "lucide-react";
+import PageHeader from "../components/common/PageHeader";
 import LoadingSpinner from "../components/common/LoadingSpinner";
 import { interventionsApi } from "../api/interventionsApi";
 import { fmtDate } from "../utils/formatters";
 import toast from "react-hot-toast";
-import { useNavigate } from "react-router-dom";
 import OutcomeModal from "../components/interventions/OutcomeModal";
 
 const COLUMNS = [
@@ -16,9 +17,9 @@ const COLUMNS = [
 const PRIORITY_DOT = { URGENT: "var(--risk-high)", HIGH: "var(--risk-medium)", MEDIUM: "var(--accent)", LOW: "var(--text-muted)" };
 
 const OUTCOME_LABELS = {
-  IMPROVED: "Improved ✅",
-  NO_CHANGE: "No Change ➖",
-  DECLINED: "Declined ⬇️",
+  IMPROVED: "Improved",
+  NO_CHANGE: "No Change",
+  DECLINED: "Declined",
 };
 
 export default function InterventionTracker() {
@@ -28,11 +29,10 @@ export default function InterventionTracker() {
   const [completingItem, setCompletingItem] = useState(null);
   const navigate = useNavigate();
 
-
   const load = async () => {
     setLoading(true);
     try {
-      const data = await interventionsApi.list({ size: 100 });
+      const data = await interventionsApi.list({ size: 500 });
       setAllItems(data.items || []);
     } catch {
       toast.error("Failed to load interventions");
@@ -60,112 +60,100 @@ export default function InterventionTracker() {
   };
 
   return (
-    <>
-      <Navbar title="Intervention Tracker" />
-      <div className="page fade-in">
-        <div className="section-header" style={{ marginBottom: 24 }}>
-          <div>
-            <h1 style={{ fontSize: "1.6rem", fontWeight: 800, marginBottom: 4 }}>Intervention Tracker</h1>
-            <p style={{ color: "var(--text-secondary)", fontSize: "0.875rem" }}>
-              Kanban-style board — drag statuses to update progress
-            </p>
-          </div>
-          <button className="btn btn-ghost btn-sm" onClick={load}>↻ Refresh</button>
-        </div>
+    <div className="page fade-in">
+      <PageHeader
+        eyebrow="Action management"
+        title="Intervention Tracker"
+        description="Prioritize student support and move interventions from pending to completed."
+        actions={<button className="btn btn-ghost" onClick={load}><RefreshCw size={16} /> Refresh</button>}
+      />
 
-        {/* Priority filter */}
-        <div className="filter-row">
+      <div className="filter-toolbar">
+        <div className="segmented-control">
           {["ALL", "URGENT", "HIGH", "MEDIUM", "LOW"].map((p) => (
             <button
               key={p}
               id={`priority-filter-${p.toLowerCase()}`}
-              className={`btn btn-sm ${priorityFilter === p ? "btn-primary" : "btn-ghost"}`}
+              className={priorityFilter === p ? "active" : ""}
               onClick={() => setPriorityFilter(p)}
             >
-              {p !== "ALL" && <span style={{ color: PRIORITY_DOT[p] }}>●</span>} {p}
+              {p !== "ALL" && <span className="priority-dot" style={{ background: PRIORITY_DOT[p] }} />} {p === "ALL" ? "All Priorities" : p}
             </button>
           ))}
-          <span style={{ marginLeft: "auto", color: "var(--text-secondary)", fontSize: "0.8rem" }}>
-            {filtered.length} interventions
-          </span>
         </div>
-
-        {loading ? (
-          <LoadingSpinner center size="lg" />
-        ) : (
-          <div className="kanban-board">
-            {COLUMNS.map((col) => {
-              const items = getCol(col.key);
-              return (
-                <div key={col.key} className="kanban-col">
-                  <div className="kanban-col-header" style={{ color: col.color }}>
-                    {col.label}
-                    <span className="kanban-count">{items.length}</span>
-                  </div>
-                  {items.length === 0 && (
-                    <div style={{ textAlign: "center", padding: "20px", color: "var(--text-muted)", fontSize: "0.8rem" }}>
-                      Empty
-                    </div>
-                  )}
-                  {items.map((iv) => (
-                    <div
-                      key={iv.id}
-                      className="kanban-card"
-                      id={`kanban-card-${iv.id}`}
-                      style={{ borderLeft: `3px solid ${PRIORITY_DOT[iv.priority] || "var(--border)"}` }}
-                    >
-                      <div className="kanban-card-title">{iv.title}</div>
-                      {iv.status === "COMPLETED" && iv.outcome && (
-                        <div style={{ marginBottom: 8 }}>
-                          <span className={`outcome-badge ${iv.outcome}`}>
-                            {OUTCOME_LABELS[iv.outcome] || iv.outcome}
-                          </span>
-                        </div>
-                      )}
-                      <div className="kanban-card-student" style={{ cursor: "pointer" }}
-                        onClick={() => navigate(`/students/${iv.student_id}`)}>
-                        👤 View student →
-                      </div>
-                      <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: 8 }}>
-                        Due: {fmtDate(iv.due_date)}
-                      </div>
-                      <div className="kanban-card-footer">
-                        <span style={{ fontSize: "0.7rem", color: PRIORITY_DOT[iv.priority], fontWeight: 700, textTransform: "uppercase" }}>
-                          {iv.priority}
-                        </span>
-                        <div style={{ display: "flex", gap: 4 }}>
-                          {col.key !== "IN_PROGRESS" && col.key !== "COMPLETED" && (
-                            <button className="btn btn-ghost btn-sm" style={{ padding: "3px 8px", fontSize: "0.72rem" }}
-                              onClick={() => updateStatus(iv.id, "IN_PROGRESS")}>
-                              ▶
-                            </button>
-                          )}
-                          {col.key !== "COMPLETED" && (
-                            <button className="btn btn-primary btn-sm" style={{ padding: "3px 8px", fontSize: "0.72rem" }}
-                              onClick={() => setCompletingItem(iv)}>
-                              ✓
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              );
-            })}
-          </div>
-        )}
+        <span className="toolbar-count">{filtered.length} interventions</span>
       </div>
+
+      {loading ? (
+        <LoadingSpinner center size="lg" />
+      ) : (
+        <div className="kanban-board">
+          {COLUMNS.map((col) => {
+            const items = getCol(col.key);
+            return (
+              <div key={col.key} className="kanban-col">
+                <div className="kanban-col-header" style={{ color: col.color }}>
+                  {col.label}
+                  <span className="kanban-count">{items.length}</span>
+                </div>
+                {items.length === 0 && (
+                  <div className="empty-state compact">
+                    <div className="empty-sub">No items here.</div>
+                  </div>
+                )}
+                {items.map((iv) => (
+                  <div
+                    key={iv.id}
+                    className="kanban-card"
+                    id={`kanban-card-${iv.id}`}
+                    style={{ borderLeft: `3px solid ${PRIORITY_DOT[iv.priority] || "var(--border)"}` }}
+                  >
+                    <div className="kanban-card-title">{iv.title}</div>
+                    {iv.status === "COMPLETED" && iv.outcome && (
+                      <div style={{ marginBottom: 8 }}>
+                        <span className={`outcome-badge ${iv.outcome}`}>
+                          {OUTCOME_LABELS[iv.outcome] || iv.outcome}
+                        </span>
+                      </div>
+                    )}
+                    <button className="kanban-card-student" onClick={() => navigate(`/students/${iv.student_id}`)}>
+                      <UserRound size={14} /> View student
+                    </button>
+                    <div className="kanban-due">Due {fmtDate(iv.due_date)}</div>
+                    <div className="kanban-card-footer">
+                      <span className="priority-label" style={{ color: PRIORITY_DOT[iv.priority] }}>
+                        {iv.priority}
+                      </span>
+                      <div className="inline-actions">
+                        {col.key !== "IN_PROGRESS" && col.key !== "COMPLETED" && (
+                          <button className="btn btn-ghost btn-icon btn-sm" title="Start" onClick={() => updateStatus(iv.id, "IN_PROGRESS")}>
+                            <Play size={14} />
+                          </button>
+                        )}
+                        {col.key !== "COMPLETED" && (
+                          <button className="btn btn-primary btn-icon btn-sm" title="Complete" onClick={() => setCompletingItem(iv)}>
+                            <Check size={14} />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       <OutcomeModal
         isOpen={!!completingItem}
         onClose={() => setCompletingItem(null)}
         onSubmit={async ({ outcome, outcomeNotes }) => {
-          const id = completingItem.id;
+          const item = completingItem;
           setCompletingItem(null);
           try {
-            await interventionsApi.updateStatus(id, "COMPLETED", undefined, outcome, outcomeNotes);
-            toast.success("Marked as Completed");
+            await interventionsApi.updateStatus(item.id, "COMPLETED", undefined, outcome, outcomeNotes);
+            toast.success("Marked as completed");
             load();
           } catch {
             toast.error("Failed to complete intervention");
@@ -173,6 +161,6 @@ export default function InterventionTracker() {
         }}
         title={completingItem?.title || ""}
       />
-    </>
+    </div>
   );
 }

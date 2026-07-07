@@ -1,7 +1,7 @@
 # 🛡️ FAILSAFE — Early Student Failure Detection & Intervention System
 
 [![Python](https://img.shields.io/badge/Python-3.11-blue)](https://python.org)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.111-green)](https://fastapi.tiangolo.com)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115-green)](https://fastapi.tiangolo.com)
 [![React](https://img.shields.io/badge/React-18-blue)](https://reactjs.org)
 [![XGBoost](https://img.shields.io/badge/XGBoost-2.0-orange)](https://xgboost.ai)
 [![SHAP](https://img.shields.io/badge/SHAP-Explainable_AI-purple)](https://shap.readthedocs.io)
@@ -31,7 +31,6 @@ FAILSAFE is a web-based academic early-warning system that uses XGBoost + SHAP t
 15. [Dataset](#dataset)
 16. [Running Tests](#running-tests)
 17. [Reset Demo Data](#reset-demo-data)
-18. [Roadmap & Milestones](#roadmap--milestones)
 
 ---
 
@@ -105,7 +104,7 @@ FAILSAFE closes this gap with a four-layer system:
 | scikit-learn | Preprocessing, cross-validation, metrics |
 | SHAP | Feature-level explainability per prediction |
 | Pandas + NumPy | Data manipulation |
-| imbalanced-learn | SMOTE oversampling for minority (fail) class |
+| XGBoost scale_pos_weight | Handle class imbalance by scaling loss gradients (e.g. 3.54 for Phase 0) |
 
 ### Backend
 | Tool | Purpose |
@@ -169,7 +168,8 @@ failsafe/
 │       ├── api/                # Axios API helpers (auth, students, predictions)
 │       └── context/            # AuthContext (JWT + role)
 ├── data/
-│   └── raw/                    # Place student-mat.csv here for training
+│   ├── student-mat.csv         # Math student records (395 records)
+│   └── student-por.csv         # Portuguese student records (649 records)
 ├── docker-compose.yml
 ├── .gitignore
 └── .github/workflows/ci.yml    # GitHub Actions CI pipeline
@@ -277,49 +277,54 @@ docker-compose up --build
 **Target Variable**
 - Binary: `G3 < 10` → **at-risk (1)**, else **not at-risk (0)**
 
-### Training Process
-
-```
-Raw CSV Upload
-     │
-     ▼
-Preprocessing (preprocess.py)
-  • Label encode categoricals
-  • Min-Max scale numerics
-  • SMOTE on training set (handle class imbalance)
-     │
-     ▼
-Train/Val/Test Split (70/15/15, stratified)
-     │
-     ▼
-XGBoost + GridSearchCV (5-fold CV, scoring: AUC-ROC)
-     │
-     ▼
-Evaluation → AUC-ROC, F1, Precision, Recall
-     │
-     ▼
-Serialisation → xgboost_model.pkl + scaler.pkl
-```
-
 ### Train the Model
+
+Both UCI CSVs use **semicolon** as delimiter. Place them at `data/student-mat.csv` and `data/student-por.csv`.
+
 ```bash
-# Place UCI dataset in data/raw/ first
 cd backend
-python ml/train.py --data ../data/raw/student-mat.csv --output ml/models/
+
+# Recommended: Combined Math + Portuguese (1,044 students)
+# Training on two subjects forces the model to learn SUBJECT-INDEPENDENT
+# behavioural patterns — aligns directly with PS goal of predicting risk
+# from attendance, study habits, and lifestyle signals, not just grades.
+python ml/train.py \
+  --data  ../data/student-mat.csv \
+  --data2 ../data/student-por.csv \
+  --output ml/models/ \
+  --all-phases
 ```
 
-### Model Performance (Achieved)
+This trains **three separate models** (one per phase) and generates artefacts in `ml/models/` (all gitignored — regenerate locally):
+- `model_phase0.pkl` + `scaler_phase0.pkl` + `threshold_phase0.json` — 30 behavioural features only
+- `model_phase1.pkl` + `scaler_phase1.pkl` + `threshold_phase1.json` — + G1 first period grade
+- `model_phase2.pkl` + `scaler_phase2.pkl` + `threshold_phase2.json` — + G1 + G2 period grades
+- `metrics_phase{0,1,2}.json` — full CV + test metrics for each phase
+- `plots_phase{0,1,2}/` — ROC curve, confusion matrix, feature importance charts
 
-| Metric | Score | Target |
-|---|---|---|
-| **AUC-ROC** | **0.91** | >= 0.88 |
-| **F1-Score** | **0.84** | >= 0.82 |
-| **Precision** | **0.81** | >= 0.78 |
-| **Recall** | **0.88** | >= 0.85 |
+### 3-Phase Prediction System
 
-> Recall is prioritised — it is better to flag a student who is fine than to miss a student who will fail.
+The professor selects which phase they are in when uploading student data:
 
-> **Note:** The app includes a smart heuristic fallback so it works even without a trained model.
+| Phase | When to Use | Features | Description |
+|---|---|---|---|
+| **Phase 0** 🌱 | Before Term 1 exams | 30 | Behavioural + socio-demographic only |
+| **Phase 1** 📈 | After Term 1 exams | 31 | + G1 (first period grade) |
+| **Phase 2** 🎯 | After Term 2 exams | 32 | + G1 + G2 (both period grades) |
+
+### Model Performance (Measured — 5-Fold CV, scale_pos_weight for imbalance)
+
+> Trained on the combined Math + Portuguese datasets (**student-mat.csv** + **student-por.csv**, 1,044 students total) using 5-Fold Cross-Validation, native `scale_pos_weight` weighting (3.54 for Phase 0) to handle class imbalance, and MinMaxScaler scaling. G1/G2 are mid-semester assessments added as optional signals per phase, never the final grade.
+
+| Phase | Features | CV AUC-PR | CV AUC-ROC | CV Recall | CV F2 | CV F1 | Test AUC-ROC |
+|---|---|---|---|---|---|---|---|
+| **Phase 0** — No grades | 41 | 0.473 ± 0.029 | 0.704 ± 0.038 | 0.904 ± 0.040 | 0.589 ± 0.022 | 0.388 ± 0.026 | 0.674 |
+| **Phase 1** — + G1 | 43 | 0.766 ± 0.055 | 0.917 ± 0.017 | 0.900 ± 0.029 | 0.801 ± 0.026 | 0.689 ± 0.033 | 0.909 |
+| **Phase 2** — + G1 + G2 | 44 | **0.906 ± 0.023** | **0.966 ± 0.012** | **0.904 ± 0.017** | **0.871 ± 0.022** | **0.827 ± 0.034** | **0.963** |
+
+> **Recall is prioritised** — missing an at-risk student (false negative) is worse than a false alarm (false positive). Classification threshold tuned to maximise Recall ≥ 0.85 in each phase.
+
+> **Note:** The app includes a heuristic scoring fallback (using absences, failures, studytime, Walc) so it functions even without trained model files present.
 
 ---
 
@@ -483,10 +488,11 @@ CREATE TABLE interventions (
 
 **UCI Student Performance Data Set**
 - Source: [UCI ML Repository](https://archive.ics.uci.edu/dataset/320/student+performance)
-- File: `student-mat.csv` (395 records, 33 features)
+- Files: `student-mat.csv` (395 records) and `student-por.csv` (649 records) — combined **1,044 records**
+- Features used: **30 behavioural + socio-demographic features** (with G1/G2 added as optional signals in Phase 1 & 2)
 - Target: `G3` (final grade) — binarised: `G3 < 10` = at-risk
 
-Place the file at: `data/raw/student-mat.csv`
+Place files at: `data/student-mat.csv` and `data/student-por.csv`
 
 ---
 

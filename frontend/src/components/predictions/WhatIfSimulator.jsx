@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from "react";
+import { RotateCcw } from "lucide-react";
 import { predictionsApi } from "../../api/predictionsApi";
 import RiskGauge from "./RiskGauge";
 
 export default function WhatIfSimulator({ studentId, originalPrediction }) {
   const raw = originalPrediction?.raw_features || {};
 
-  // Sliders state
   const [absences, setAbsences] = useState(raw.absences !== undefined ? Number(raw.absences) : 0);
   const [studytime, setStudytime] = useState(raw.studytime !== undefined ? Number(raw.studytime) : 2);
   const [failures, setFailures] = useState(raw.failures !== undefined ? Number(raw.failures) : 0);
@@ -13,12 +13,10 @@ export default function WhatIfSimulator({ studentId, originalPrediction }) {
   const [goout, setGoout] = useState(raw.goout !== undefined ? Number(raw.goout) : 2);
   const [health, setHealth] = useState(raw.health !== undefined ? Number(raw.health) : 3);
 
-  // Simulation result
   const [simScore, setSimScore] = useState(originalPrediction?.risk_score || 0);
   const [simLevel, setSimLevel] = useState(originalPrediction?.risk_level || "LOW");
   const [loading, setLoading] = useState(false);
 
-  // Sync state if original prediction changes
   useEffect(() => {
     if (originalPrediction) {
       const freshRaw = originalPrediction.raw_features || {};
@@ -33,7 +31,6 @@ export default function WhatIfSimulator({ studentId, originalPrediction }) {
     }
   }, [originalPrediction]);
 
-  // Debounced simulation effect
   useEffect(() => {
     let isMounted = true;
     setLoading(true);
@@ -83,170 +80,77 @@ export default function WhatIfSimulator({ studentId, originalPrediction }) {
     goout !== (raw.goout !== undefined ? Number(raw.goout) : 2) ||
     health !== (raw.health !== undefined ? Number(raw.health) : 3);
 
-  // Formatting helper labels
   const studytimeLabels = ["< 2 hrs", "2 - 5 hrs", "5 - 10 hrs", "> 10 hrs"];
   const alcoholLabels = ["Very Low", "Low", "Moderate", "High", "Very High"];
   const gooutLabels = ["Very Low", "Low", "Moderate", "High", "Very High"];
   const healthLabels = ["Very Bad", "Bad", "Fair", "Good", "Very Good"];
 
+  const controls = [
+    { label: "Weekly Absences", value: absences, display: `${absences} days`, min: 0, max: 93, onChange: setAbsences },
+    { label: "Study Time", value: studytime, display: studytimeLabels[studytime - 1] || `${studytime} / 4`, min: 1, max: 4, onChange: setStudytime },
+    { label: "History of Failures", value: failures, display: `${failures} classes`, min: 0, max: 3, onChange: setFailures },
+    { label: "Weekend Alcohol Use", value: Walc, display: alcoholLabels[Walc - 1] || `${Walc} / 5`, min: 1, max: 5, onChange: setWalc },
+    { label: "Going Out with Friends", value: goout, display: gooutLabels[goout - 1] || `${goout} / 5`, min: 1, max: 5, onChange: setGoout },
+    { label: "Current Health Status", value: health, display: healthLabels[health - 1] || `${health} / 5`, min: 1, max: 5, onChange: setHealth },
+  ];
+
   return (
-    <div className="card" style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+    <div className="card">
+      <div className="card-header">
         <div>
-          <h2 className="card-title">What-If Risk Simulator</h2>
-          <p className="card-subtitle">Tweak key academic & lifestyle factors to see the simulated risk change live</p>
+          <div className="card-title">What-If Risk Simulator</div>
+          <div className="card-subtitle">Adjust key academic and lifestyle factors to preview simulated risk changes.</div>
         </div>
         {hasChanges && (
           <button className="btn btn-ghost btn-sm" onClick={handleReset}>
-            Reset Values
+            <RotateCcw size={14} /> Reset Values
           </button>
         )}
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: 32, alignItems: "start" }}>
-        {/* Sliders Form */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          {/* Absences */}
-          <div className="form-group" style={{ margin: 0 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-              <span className="form-label" style={{ margin: 0 }}>Weekly Absences</span>
-              <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "var(--accent)" }}>{absences} days</span>
+      <div className="simulator-grid">
+        <div className="slider-stack">
+          {controls.map((control) => (
+            <div className="form-group" key={control.label}>
+              <div className="slider-row">
+                <span className="form-label">{control.label}</span>
+                <span className="slider-value">{control.display}</span>
+              </div>
+              <input
+                type="range"
+                min={control.min}
+                max={control.max}
+                value={control.value}
+                onChange={(e) => control.onChange(Number(e.target.value))}
+                style={{ width: "100%", accentColor: "var(--accent)" }}
+              />
             </div>
-            <input
-              type="range"
-              min="0"
-              max="93"
-              value={absences}
-              onChange={(e) => setAbsences(Number(e.target.value))}
-              style={{ width: "100%", height: 6, cursor: "pointer", accentColor: "var(--accent)" }}
-            />
-          </div>
-
-          {/* Study Time */}
-          <div className="form-group" style={{ margin: 0 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-              <span className="form-label" style={{ margin: 0 }}>Study Time (Weekly)</span>
-              <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "var(--accent)" }}>
-                {studytimeLabels[studytime - 1] || `${studytime} / 4`}
-              </span>
-            </div>
-            <input
-              type="range"
-              min="1"
-              max="4"
-              value={studytime}
-              onChange={(e) => setStudytime(Number(e.target.value))}
-              style={{ width: "100%", height: 6, cursor: "pointer", accentColor: "var(--accent)" }}
-            />
-          </div>
-
-          {/* Failures */}
-          <div className="form-group" style={{ margin: 0 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-              <span className="form-label" style={{ margin: 0 }}>History of Failures</span>
-              <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "var(--accent)" }}>{failures} classes</span>
-            </div>
-            <input
-              type="range"
-              min="0"
-              max="3"
-              value={failures}
-              onChange={(e) => setFailures(Number(e.target.value))}
-              style={{ width: "100%", height: 6, cursor: "pointer", accentColor: "var(--accent)" }}
-            />
-          </div>
-
-          {/* Weekend Alcohol */}
-          <div className="form-group" style={{ margin: 0 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-              <span className="form-label" style={{ margin: 0 }}>Weekend Alcohol Use</span>
-              <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "var(--accent)" }}>
-                {alcoholLabels[Walc - 1] || `${Walc} / 5`}
-              </span>
-            </div>
-            <input
-              type="range"
-              min="1"
-              max="5"
-              value={Walc}
-              onChange={(e) => setWalc(Number(e.target.value))}
-              style={{ width: "100%", height: 6, cursor: "pointer", accentColor: "var(--accent)" }}
-            />
-          </div>
-
-          {/* Going Out */}
-          <div className="form-group" style={{ margin: 0 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-              <span className="form-label" style={{ margin: 0 }}>Going Out with Friends</span>
-              <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "var(--accent)" }}>
-                {gooutLabels[goout - 1] || `${goout} / 5`}
-              </span>
-            </div>
-            <input
-              type="range"
-              min="1"
-              max="5"
-              value={goout}
-              onChange={(e) => setGoout(Number(e.target.value))}
-              style={{ width: "100%", height: 6, cursor: "pointer", accentColor: "var(--accent)" }}
-            />
-          </div>
-
-          {/* Health Status */}
-          <div className="form-group" style={{ margin: 0 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-              <span className="form-label" style={{ margin: 0 }}>Current Health Status</span>
-              <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "var(--accent)" }}>
-                {healthLabels[health - 1] || `${health} / 5`}
-              </span>
-            </div>
-            <input
-              type="range"
-              min="1"
-              max="5"
-              value={health}
-              onChange={(e) => setHealth(Number(e.target.value))}
-              style={{ width: "100%", height: 6, cursor: "pointer", accentColor: "var(--accent)" }}
-            />
-          </div>
+          ))}
         </div>
 
-        {/* Side-by-Side Comparison */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 16, height: "100%" }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, background: "var(--bg-secondary)", borderRadius: "var(--radius-lg)", padding: 16, border: "1px solid var(--border)", position: "relative" }}>
-            {loading && (
-              <div style={{ position: "absolute", inset: 0, background: "rgba(10, 14, 26, 0.6)", backdropFilter: "blur(2px)", borderRadius: "var(--radius-lg)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 10 }}>
-                <span className="spinner"></span>
-              </div>
-            )}
-            
-            {/* Original column */}
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
-              <div style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Original Risk</div>
-              <div style={{ fontSize: "1.75rem", fontWeight: 800, color: "var(--text-primary)" }}>
-                {Math.round((originalPrediction?.risk_score || 0) * 100)}%
-              </div>
+        <div>
+          <div className="comparison-panel">
+            {loading && <div className="loading-overlay"><span className="spinner" /></div>}
+            <div className="comparison-cell">
+              <div className="comparison-label">Original Risk</div>
+              <div className="comparison-score">{Math.round((originalPrediction?.risk_score || 0) * 100)}%</div>
               <span className={`risk-badge ${originalPrediction?.risk_level || "LOW"}`}>
                 {originalPrediction?.risk_level || "LOW"}
               </span>
             </div>
-
-            {/* Separator line */}
-            <div style={{ borderLeft: "1px solid var(--border)" }} />
-
-            {/* Simulated column */}
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
-              <div style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--accent)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Simulated Risk</div>
-              <div style={{ fontSize: "1.75rem", fontWeight: 800, color: simLevel === "HIGH" ? "var(--risk-high)" : simLevel === "MEDIUM" ? "var(--risk-medium)" : "var(--risk-low)" }}>
+            <div className="comparison-cell">
+              <div className="comparison-label">Simulated Risk</div>
+              <div
+                className="comparison-score"
+                style={{ color: simLevel === "HIGH" ? "var(--risk-high)" : simLevel === "MEDIUM" ? "var(--risk-medium)" : "var(--risk-low)" }}
+              >
                 {Math.round(simScore * 100)}%
               </div>
-              <span className={`risk-badge ${simLevel}`}>
-                {simLevel}
-              </span>
+              <span className={`risk-badge ${simLevel}`}>{simLevel}</span>
             </div>
           </div>
-          
-          <div style={{ display: "flex", justifyContent: "center", padding: "10px 0" }}>
+
+          <div style={{ display: "flex", justifyContent: "center", paddingTop: 18 }}>
             <RiskGauge score={simScore} level={simLevel} />
           </div>
         </div>

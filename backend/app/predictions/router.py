@@ -56,8 +56,22 @@ def simulate_prediction(
         if v is not None:
             row[k] = v
 
-    # Run simulation
-    result = run_simulation(row)
+    # Find latest prediction to determine which model phase was used
+    pred = (
+        db.query(Prediction)
+        .filter(Prediction.student_id == student_id)
+        .order_by(Prediction.predicted_at.desc())
+        .first()
+    )
+    phase = 0
+    if pred and pred.shap_values:
+        if "G2" in pred.shap_values:
+            phase = 2
+        elif "G1" in pred.shap_values:
+            phase = 1
+
+    # Run simulation with the correct phase model
+    result = run_simulation(row, phase=phase)
     return SimulateResponse(**result)
 
 

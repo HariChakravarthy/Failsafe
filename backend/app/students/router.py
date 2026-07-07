@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import User, Student, FeatureSnapshot, Prediction
-from app.auth.utils import get_current_user
+from app.auth.utils import get_current_user, require_hod
 from app.students.schemas import StudentCreate, StudentUpdate, StudentOut, StudentListOut, UploadSummary
 from ml.predict import run_prediction_pipeline
 
@@ -16,22 +16,73 @@ router = APIRouter(prefix="/students", tags=["students"])
 @router.get("", response_model=StudentListOut)
 def list_students(
     page: int = Query(1, ge=1),
-    size: int = Query(20, ge=1, le=100),
+    size: int = Query(20, ge=1, le=1000),
     risk_level: Optional[str] = None,
     search: Optional[str] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    from sqlalchemy import func
+
     query = db.query(Student)
     if search:
         query = query.filter(
             (Student.name.ilike(f"%{search}%")) | (Student.student_code.ilike(f"%{search}%"))
         )
+
+    # Server-side risk level filtering via latest prediction subquery
+    if risk_level:
+        latest_pred_subq = (
+            db.query(
+                Prediction.student_id,
+                func.max(Prediction.predicted_at).label("max_at"),
+            )
+            .group_by(Prediction.student_id)
+            .subquery()
+        )
+        risk_filter_q = (
+            db.query(Prediction.student_id)
+            .join(
+                latest_pred_subq,
+                (Prediction.student_id == latest_pred_subq.c.student_id)
+                & (Prediction.predicted_at == latest_pred_subq.c.max_at),
+            )
+            .filter(Prediction.risk_level == risk_level.upper())
+            .subquery()
+        )
+        query = query.filter(Student.id.in_(db.query(risk_filter_q.c.student_id)))
+
     total = query.count()
     items = query.offset((page - 1) * size).limit(size).all()
+
+    # Single subquery to fetch latest prediction per student — avoids N+1
+    student_ids = [s.id for s in items]
+    if student_ids:
+        latest_pred_subq = (
+            db.query(
+                Prediction.student_id,
+                func.max(Prediction.predicted_at).label("max_at"),
+            )
+            .filter(Prediction.student_id.in_(student_ids))
+            .group_by(Prediction.student_id)
+            .subquery()
+        )
+        latest_preds = (
+            db.query(Prediction)
+            .join(
+                latest_pred_subq,
+                (Prediction.student_id == latest_pred_subq.c.student_id)
+                & (Prediction.predicted_at == latest_pred_subq.c.max_at),
+            )
+            .all()
+        )
+        risk_map = {str(p.student_id): p.risk_level for p in latest_preds}
+    else:
+        risk_map = {}
+
     for student in items:
-        pred = db.query(Prediction).filter(Prediction.student_id == student.id).order_by(Prediction.predicted_at.desc()).first()
-        student.latest_risk = pred.risk_level if pred else None
+        student.latest_risk = risk_map.get(str(student.id))
+
     return StudentListOut(items=items, total=total, page=page, size=size)
 
 
@@ -118,15 +169,13 @@ def update_student(
 def delete_student(
     student_id: uuid.UUID,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_hod),   # HOD / Admin only
 ):
     from app.models import FeatureSnapshot, Prediction, Intervention
     student = db.query(Student).filter(Student.id == student_id).first()
     if not student:
         raise HTTPException(status_code=404, detail="Student not found")
     # Cascade delete manually
-    snap_ids = [s.id for s in db.query(FeatureSnapshot).filter(FeatureSnapshot.student_id == student_id).all()]
-    pred_ids = [p.id for p in db.query(Prediction).filter(Prediction.student_id == student_id).all()]
     db.query(Intervention).filter(Intervention.student_id == student_id).delete()
     db.query(Prediction).filter(Prediction.student_id == student_id).delete()
     db.query(FeatureSnapshot).filter(FeatureSnapshot.student_id == student_id).delete()
@@ -138,42 +187,87 @@ def delete_student(
 async def upload_csv(
     file: UploadFile = File(...),
     week_number: int = Query(1, ge=1),
+    phase: int = Query(0, ge=0, le=2, description="Prediction phase: 0=before G1, 1=after G1, 2=after G1+G2"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Upload a CSV of student features; triggers batch prediction for each student."""
+    """Upload a CSV of student features; triggers batch prediction for each student.
+
+    Phase controls which model is used:
+      0 = Before Term 1 exams  — behavioural features only (30 features)
+      1 = After  Term 1 exams  — adds G1 first period grade  (31 features)
+      2 = After  Term 2 exams  — adds G1 + G2 period grades  (32 features)
+    """
     if not file.filename.endswith(".csv"):
         raise HTTPException(status_code=400, detail="Only CSV files are accepted")
 
     content = await file.read()
+    if len(content) > 10 * 1024 * 1024:  # 10 MB limit
+        raise HTTPException(status_code=400, detail="CSV file too large. Maximum size is 10 MB.")
     try:
-        df = pd.read_csv(io.BytesIO(content))
+        # Auto-detect delimiter: UCI files use ';', most exports use ','
+        sample = content[:2048].decode("utf-8", errors="ignore")
+        import csv as _csv
+        try:
+            dialect = _csv.Sniffer().sniff(sample, delimiters=";,")
+            sep = dialect.delimiter
+        except Exception:
+            sep = ","  # fallback
+        df = pd.read_csv(io.BytesIO(content), sep=sep)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Could not parse CSV: {e}")
 
-    required_cols = {"student_code", "absences", "studytime", "failures"}
+    # student_code is optional — auto-generate from row index if absent
+    if "student_code" not in df.columns:
+        df["student_code"] = [f"S{str(i+1).zfill(4)}" for i in range(len(df))]
+
+    required_cols = {"absences", "studytime", "failures"}
     missing = required_cols - set(df.columns)
     if missing:
         raise HTTPException(status_code=400, detail=f"Missing required columns: {missing}")
 
+    # Phase-specific grade column requirements
+    if phase >= 1 and "G1" not in df.columns:
+        raise HTTPException(status_code=400, detail="Phase 1/2 uploads require a 'G1' column (first period grade)")
+    if phase >= 2 and "G2" not in df.columns:
+        raise HTTPException(status_code=400, detail="Phase 2 uploads require a 'G2' column (second period grade)")
+
     summary = UploadSummary(total_uploaded=0, high_risk=0, medium_risk=0, low_risk=0)
     errors = []
 
+    # Batch query existing students to avoid N+1 queries
+    student_codes = [str(code) for code in df["student_code"].tolist()]
+    existing_students = db.query(Student).filter(Student.student_code.in_(student_codes)).all()
+    student_map = {s.student_code: s for s in existing_students}
+
+    # Prepare data lists for batch prediction
+    batch_rows = []
+    batch_student_ids = []
+    batch_snapshot_ids = []
+    batch_assigned_to_ids = []
+    batch_students = []
+
     for _, row in df.iterrows():
         try:
-            student = db.query(Student).filter(Student.student_code == str(row["student_code"])).first()
+            student_code_str = str(row["student_code"])
+            student = student_map.get(student_code_str)
             if not student:
+                # Generate UUID in Python to link snapshot & prediction without db.flush()
                 student = Student(
-                    student_code=str(row["student_code"]),
-                    name=row.get("name"),
+                    id=uuid.uuid4(),
+                    student_code=student_code_str,
+                    name=row.get("name") if pd.notna(row.get("name")) else None,
                     age=int(row["age"]) if "age" in row and pd.notna(row["age"]) else None,
-                    gender=row.get("sex"),
+                    gender=row.get("sex") if pd.notna(row.get("sex")) else None,
                     faculty_id=current_user.id,
                 )
                 db.add(student)
-                db.flush()
-
+                student_map[student_code_str] = student
+            
+            # Generate snapshot ID in Python
+            snapshot_id = uuid.uuid4()
             snapshot = FeatureSnapshot(
+                id=snapshot_id,
                 student_id=student.id,
                 week_number=week_number,
                 absences=int(row.get("absences", 0)),
@@ -182,10 +276,32 @@ async def upload_csv(
                 raw_features=row.dropna().to_dict(),
             )
             db.add(snapshot)
-            db.flush()
 
-            prediction = run_prediction_pipeline(row.to_dict(), student.id, snapshot.id, db)
-            if prediction:
+            # Collect for batch pipeline
+            batch_rows.append(row.to_dict())
+            batch_student_ids.append(student.id)
+            batch_snapshot_ids.append(snapshot_id)
+            batch_assigned_to_ids.append(student.faculty_id if student.faculty_id else current_user.id)
+            batch_students.append(student)
+
+        except Exception as e:
+            errors.append(f"Row {row.get('student_code', '?')}: {e}")
+
+    # Run vectorized batch prediction and SHAP computation
+    if batch_rows:
+        try:
+            from ml.predict import run_prediction_pipeline_batch
+            predictions = run_prediction_pipeline_batch(
+                batch_rows,
+                batch_student_ids,
+                batch_snapshot_ids,
+                batch_assigned_to_ids,
+                db,
+                phase=phase
+            )
+            
+            # Aggregate stats and update student latest_risk field
+            for student, prediction in zip(batch_students, predictions):
                 student.latest_risk = prediction.risk_level
                 if prediction.risk_level == "HIGH":
                     summary.high_risk += 1
@@ -194,8 +310,9 @@ async def upload_csv(
                 else:
                     summary.low_risk += 1
                 summary.total_uploaded += 1
+                
         except Exception as e:
-            errors.append(f"Row {row.get('student_code', '?')}: {e}")
+            errors.append(f"Batch prediction failure: {e}")
 
     db.commit()
     summary.errors = errors
